@@ -17,14 +17,37 @@
 // Package common provides common types for constructing mixnet clients.
 package common
 
+import (
+	"bufio"
+	"encoding/json"
+	"os"
+)
+
 // Config is a mix client configuration struct
 type Config struct {
-	LongtermKeyFilePath string
+	Username                 string
+	Provider                 string
+	LongtermX25519PublicKey  string
+	LongtermX25519PrivateKey string
 }
 
 // LoadConfig returns a *Config given a filepath to a configuration file
 func LoadConfig(configFilePath string) (*Config, error) {
 	config := Config{}
-	// XXX todo: fix me
+	file, err := os.Open(configFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// XXX fixme: can we do this more efficiently?
+	scanner := bufio.NewScanner(file)
+	bs := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		bs += line + "\n"
+	}
+	if err := json.Unmarshal([]byte(bs), &config); err != nil {
+		return nil, err
+	}
 	return &config, nil
 }
