@@ -116,6 +116,7 @@ func main() {
 	}
 	client := NewClientDaemon(config)
 	client.Start()
+
 	defer client.Stop()
 	for {
 		select {

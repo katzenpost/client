@@ -1,6 +1,0 @@
-{
-    "Username": "alice",
-    "Provider": "acme",
-    "LongtermX25519PublicKey": "123",
-    "LongtermX25519PrivateKey": "456"
-}

@@ -18,59 +18,58 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
+	"io/ioutil"
 	"net"
-	"os"
 
 	"github.com/katzenpost/core/wire/common"
+	"github.com/pelletier/go-toml"
 )
 
 type Config struct {
 	Identifier        []byte
 	PublicEd25519Key  []byte
 	PrivateEd25519Key []byte
+	ProviderNetwork   string
+	ProviderAddress   string
 }
 
-// JsonConfig is a mix client configuration struct
-type JsonConfig struct {
+type TomlConfig struct {
+	Client Client
+}
+
+// TomlConfig is a mix client configuration struct
+type Client struct {
 	Username                 string
 	Provider                 string
 	LongtermX25519PublicKey  string
 	LongtermX25519PrivateKey string
+	ProviderNetwork          string
+	ProviderAddress          string
 }
 
-func (j *JsonConfig) Config() (*Config, error) {
-	publicKey, err := base64.StdEncoding.DecodeString(j.LongtermX25519PublicKey)
+func (t *TomlConfig) Config() (*Config, error) {
+	publicKey, err := base64.StdEncoding.DecodeString(t.Client.LongtermX25519PublicKey)
 	if err != nil {
 		log.Debugf("failed to decode base64 string: %s", err)
 		return nil, err
 	}
 	c := Config{
-		Identifier:       []byte(j.Username + j.Provider),
+		Identifier:       []byte(t.Client.Username + t.Client.Provider),
 		PublicEd25519Key: publicKey,
 	}
 	return &c, nil
 }
 
 // LoadConfig returns a *Config given a filepath to a configuration file
-func LoadConfig(configFilePath string) (*JsonConfig, error) {
-	config := JsonConfig{}
-	file, err := os.Open(configFilePath)
+func LoadConfig(configFilePath string) (*TomlConfig, error) {
+	config := TomlConfig{}
+	lines, err := ioutil.ReadFile(configFilePath)
 	if err != nil {
 		return nil, err
 	}
-
-	// XXX fixme: can we do this more efficiently?
-	scanner := bufio.NewScanner(file)
-	bs := ""
-	for scanner.Scan() {
-		line := scanner.Text()
-		bs += line + "\n"
-	}
-	if err := json.Unmarshal([]byte(bs), &config); err != nil {
+	if err := toml.Unmarshal([]byte(lines), &config); err != nil {
 		return nil, err
 	}
 	return &config, nil
@@ -100,9 +99,14 @@ func NewClientDaemon(config *Config) *ClientDaemon {
 }
 
 // Start starts the client services
-func (c *ClientDaemon) Start() {
+func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
-	// XXX fix me
+	err := c.Dial(c.config.ProviderNetwork, c.config.ProviderAddress)
+	if err != nil {
+		log.Debugf("dial failed: %s", err)
+		return err
+	}
+	return nil
 }
 
 // Stop stops the client services

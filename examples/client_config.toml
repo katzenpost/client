@@ -1,0 +1,8 @@
+
+[Client]
+  LongtermX25519PrivateKey = "456"
+  LongtermX25519PublicKey = "123"
+  Provider = "acme"
+  ProviderAddress = "127.0.0.1:54321"
+  ProviderNetwork = "tcp"
+  Username = "alice"
