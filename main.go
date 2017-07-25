@@ -25,7 +25,6 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/katzenpost/client/common"
 	"github.com/op/go-logging"
 )
 
@@ -80,7 +79,7 @@ func setupLoggerBackend(level logging.Level) logging.LeveledBackend {
 func main() {
 	var configFilePath string
 	var logLevel string
-	var config *common.Config
+	var config *Config
 	var level logging.Level
 	var err error
 
@@ -94,7 +93,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	config, err = common.LoadConfig(configFilePath)
+	jsonConfig, err := LoadConfig(configFilePath)
 	if err != nil {
 		panic(err)
 	}
@@ -111,6 +110,10 @@ func main() {
 	signal.Notify(sigKillChan, os.Interrupt, os.Kill)
 
 	log.Notice("mixclient startup")
+	config, err = jsonConfig.Config()
+	if err != nil {
+		panic(err)
+	}
 	client := NewClientDaemon(config)
 	client.Start()
 	defer client.Stop()
