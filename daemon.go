@@ -35,29 +35,46 @@ type Config struct {
 	ProviderAddress   string
 }
 
+// TomlConfig is used for unmarshaling our client toml configuration
 type TomlConfig struct {
 	Client Client
 }
 
-// TomlConfig is a mix client configuration struct
+// Client is a mix client configuration struct
 type Client struct {
-	Username                 string
-	Provider                 string
-	LongtermX25519PublicKey  string
-	LongtermX25519PrivateKey string
-	ProviderNetwork          string
-	ProviderAddress          string
+	Username        string
+	Provider        string
+	PublicKeyFile   string
+	PrivateKeyFile  string
+	ProviderNetwork string
+	ProviderAddress string
 }
 
 func (t *TomlConfig) Config() (*Config, error) {
-	publicKey, err := base64.StdEncoding.DecodeString(t.Client.LongtermX25519PublicKey)
+	publicKeyBase64, err := ioutil.ReadFile(t.Client.PublicKeyFile)
 	if err != nil {
-		log.Debugf("failed to decode base64 string: %s", err)
+		return nil, err
+	}
+	privateKeyBase64, err := ioutil.ReadFile(t.Client.PrivateKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	publicKey, err := base64.StdEncoding.DecodeString(string(publicKeyBase64))
+	if err != nil {
+		log.Debugf("failed to decode base64 public key: %s", err)
+		return nil, err
+	}
+	privateKey, err := base64.StdEncoding.DecodeString(string(privateKeyBase64))
+	if err != nil {
+		log.Debugf("failed to decode base64 private key: %s", err)
 		return nil, err
 	}
 	c := Config{
-		Identifier:       []byte(t.Client.Username + t.Client.Provider),
-		PublicEd25519Key: publicKey,
+		Identifier:        []byte(t.Client.Username + t.Client.Provider),
+		PublicEd25519Key:  publicKey,
+		PrivateEd25519Key: privateKey,
+		ProviderNetwork:   t.Client.ProviderNetwork,
+		ProviderAddress:   t.Client.ProviderAddress,
 	}
 	return &c, nil
 }
