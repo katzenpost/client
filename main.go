@@ -77,12 +77,15 @@ func setupLoggerBackend(level logging.Level) logging.LeveledBackend {
 }
 
 func main() {
-	var configFilePath string
-	var logLevel string
+	var err error
 	var config *Config
 	var level logging.Level
-	var err error
 
+	var configFilePath string
+	var logLevel string
+	var shouldAutogenKeys bool
+
+	flag.BoolVar(&shouldAutogenKeys, "autogenkeys", false, "auto-generate cryptographic keys specified in configuration file")
 	flag.StringVar(&configFilePath, "config", "", "configuration file")
 	flag.StringVar(&logLevel, "log_level", "INFO", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.Parse()
@@ -93,7 +96,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	jsonConfig, err := LoadConfig(configFilePath)
+	tomlConfig, err := LoadConfig(configFilePath)
 	if err != nil {
 		panic(err)
 	}
@@ -109,11 +112,21 @@ func main() {
 	sigKillChan := make(chan os.Signal, 1)
 	signal.Notify(sigKillChan, os.Interrupt, os.Kill)
 
-	log.Notice("mixclient startup")
-	config, err = jsonConfig.Config()
+	if shouldAutogenKeys == true {
+		// XXX todo: autogen keys
+		//tomlConfig.Client.ProviderAuthPublicKeyFile
+		//ioutil.ReadFile(tomlConfig.Client.ProviderAuthPublicKeyFile)
+		//tomlConfig.Client.ProviderAuthPrivateKeyFile
+		//tomlConfig.Client.ClientPublicKeyFile
+		//tomlConfig.Client.ClientPrivateKeyFile
+	}
+
+	config, err = tomlConfig.Config()
 	if err != nil {
 		panic(err)
 	}
+
+	log.Notice("mixclient startup")
 	client := NewClientDaemon(config)
 	client.Start()
 

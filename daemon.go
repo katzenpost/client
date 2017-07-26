@@ -19,7 +19,7 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/base64"
+	//"encoding/base64"
 	"io/ioutil"
 	"net"
 
@@ -29,13 +29,16 @@ import (
 )
 
 type Config struct {
-	Identifier        []byte
-	PublicEd25519Key  []byte
-	PrivateEd25519Key []byte
-	ProviderNetwork   string
-	ProviderAddress   string
-	SMTPProxyNetwork  string
-	SMTPProxyAddress  string
+	Identifier             []byte
+	ProviderAuthPublicKey  []byte
+	ProviderAuthPrivateKey []byte
+	ClientPublicKey        []byte
+	ClientPrivateKey       []byte
+	ProviderNetwork        string
+	ProviderAddress        string
+	SMTPProxyNetwork       string
+	SMTPProxyAddress       string
+	ShouldAutoGenKeys      bool
 }
 
 // TomlConfig is used for unmarshaling our client toml configuration
@@ -45,41 +48,45 @@ type TomlConfig struct {
 
 // Client is a mix client configuration struct
 type Client struct {
-	Username         string
-	Provider         string
-	PublicKeyFile    string
-	PrivateKeyFile   string
-	ProviderNetwork  string
-	ProviderAddress  string
-	SMTPProxyNetwork string
-	SMTPProxyAddress string
+	Username                   string
+	Provider                   string
+	ProviderAuthPublicKeyFile  string
+	ProviderAuthPrivateKeyFile string
+	ClientPublicKeyFile        string
+	ClientPrivateKeyFile       string
+	ProviderNetwork            string
+	ProviderAddress            string
+	SMTPProxyNetwork           string
+	SMTPProxyAddress           string
 }
 
 func (t *TomlConfig) Config() (*Config, error) {
-	publicKeyBase64, err := ioutil.ReadFile(t.Client.PublicKeyFile)
-	if err != nil {
-		return nil, err
-	}
-	privateKeyBase64, err := ioutil.ReadFile(t.Client.PrivateKeyFile)
-	if err != nil {
-		return nil, err
-	}
-	publicKey, err := base64.StdEncoding.DecodeString(string(publicKeyBase64))
-	if err != nil {
-		log.Debugf("failed to decode base64 public key: %s", err)
-		return nil, err
-	}
-	privateKey, err := base64.StdEncoding.DecodeString(string(privateKeyBase64))
-	if err != nil {
-		log.Debugf("failed to decode base64 private key: %s", err)
-		return nil, err
-	}
+	// publicKeyBase64, err := ioutil.ReadFile(t.Client.PublicKeyFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// privateKeyBase64, err := ioutil.ReadFile(t.Client.PrivateKeyFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// publicKey, err := base64.StdEncoding.DecodeString(string(publicKeyBase64))
+	// if err != nil {
+	// 	log.Debugf("failed to decode base64 public key: %s", err)
+	// 	return nil, err
+	// }
+	// privateKey, err := base64.StdEncoding.DecodeString(string(privateKeyBase64))
+	// if err != nil {
+	// 	log.Debugf("failed to decode base64 private key: %s", err)
+	// 	return nil, err
+	// }
 	c := Config{
-		Identifier:        []byte(t.Client.Username + t.Client.Provider),
-		PublicEd25519Key:  publicKey,
-		PrivateEd25519Key: privateKey,
-		ProviderNetwork:   t.Client.ProviderNetwork,
-		ProviderAddress:   t.Client.ProviderAddress,
+		Identifier: []byte(t.Client.Username + t.Client.Provider),
+		// PublicEd25519Key:  publicKey,
+		// PrivateEd25519Key: privateKey,
+		ProviderNetwork:  t.Client.ProviderNetwork,
+		ProviderAddress:  t.Client.ProviderAddress,
+		SMTPProxyNetwork: t.Client.SMTPProxyNetwork,
+		SMTPProxyAddress: t.Client.SMTPProxyAddress,
 	}
 	return &c, nil
 }
@@ -110,8 +117,8 @@ func NewClientDaemon(config *Config) *ClientDaemon {
 		Initiator:  true,
 		Identifier: config.Identifier,
 		Random:     rand.Reader,
-		LongtermEd25519PublicKey:  config.PublicEd25519Key,
-		LongtermEd25519PrivateKey: config.PrivateEd25519Key,
+		//LongtermEd25519PublicKey:  config.PublicEd25519Key,
+		//LongtermEd25519PrivateKey: config.PrivateEd25519Key,
 	}
 	c := ClientDaemon{
 		config:  config,
@@ -124,18 +131,19 @@ func NewClientDaemon(config *Config) *ClientDaemon {
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
 
-	log.Debug("Starting SMTP submission proxy")
+	log.Noticef("Starting SMTP submission proxy on %s:%s", c.config.SMTPProxyNetwork, c.config.SMTPProxyAddress)
+
 	smtpServer := server.New(c.config.SMTPProxyNetwork, c.config.SMTPProxyAddress, smtpServerHandler, nil) // XXX todo: use logging
 	err := smtpServer.Start()
 	if err != nil {
 		panic(err)
 	}
 
-	err = c.Dial(c.config.ProviderNetwork, c.config.ProviderAddress)
-	if err != nil {
-		log.Debugf("dial failed: %s", err)
-		return err
-	}
+	// err = c.Dial(c.config.ProviderNetwork, c.config.ProviderAddress)
+	// if err != nil {
+	// 	log.Debugf("dial failed: %s", err)
+	// 	return err
+	// }
 	return nil
 }
 
