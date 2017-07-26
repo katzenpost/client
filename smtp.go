@@ -17,8 +17,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net"
+	"net/mail"
 
 	"github.com/siebenmann/smtpd"
 )
@@ -32,7 +35,23 @@ func smtpServerHandler(conn net.Conn) error {
 			return nil
 		}
 		if event.What == smtpd.GOTDATA {
-			fmt.Println("MAIL DATA", event.Arg)
+			messageBuffer := bytes.NewBuffer([]byte(event.Arg))
+			fmt.Println("MAIL DATA")
+			message, err := mail.ReadMessage(messageBuffer)
+			if err != nil {
+				return err
+			}
+			header := message.Header
+			fmt.Println("Date:", header.Get("Date"))
+			fmt.Println("From:", header.Get("From"))
+			fmt.Println("To:", header.Get("To"))
+			fmt.Println("Subject:", header.Get("Subject"))
+			body, err := ioutil.ReadAll(message.Body)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("%s", body)
+			return nil
 		}
 	}
 	return nil
