@@ -24,6 +24,7 @@ import (
 	"net"
 
 	"github.com/katzenpost/core/wire/common"
+	"github.com/katzenpost/core/wire/server"
 	"github.com/pelletier/go-toml"
 )
 
@@ -33,6 +34,8 @@ type Config struct {
 	PrivateEd25519Key []byte
 	ProviderNetwork   string
 	ProviderAddress   string
+	SMTPProxyNetwork  string
+	SMTPProxyAddress  string
 }
 
 // TomlConfig is used for unmarshaling our client toml configuration
@@ -42,12 +45,14 @@ type TomlConfig struct {
 
 // Client is a mix client configuration struct
 type Client struct {
-	Username        string
-	Provider        string
-	PublicKeyFile   string
-	PrivateKeyFile  string
-	ProviderNetwork string
-	ProviderAddress string
+	Username         string
+	Provider         string
+	PublicKeyFile    string
+	PrivateKeyFile   string
+	ProviderNetwork  string
+	ProviderAddress  string
+	SMTPProxyNetwork string
+	SMTPProxyAddress string
 }
 
 func (t *TomlConfig) Config() (*Config, error) {
@@ -118,7 +123,15 @@ func NewClientDaemon(config *Config) *ClientDaemon {
 // Start starts the client services
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
-	err := c.Dial(c.config.ProviderNetwork, c.config.ProviderAddress)
+
+	log.Debug("Starting SMTP submission proxy")
+	smtpServer := server.New(c.config.SMTPProxyNetwork, c.config.SMTPProxyAddress, smtpServerHandler, nil) // XXX todo: use logging
+	err := smtpServer.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	err = c.Dial(c.config.ProviderNetwork, c.config.ProviderAddress)
 	if err != nil {
 		log.Debugf("dial failed: %s", err)
 		return err
