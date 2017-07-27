@@ -90,6 +90,11 @@ func main() {
 	flag.StringVar(&logLevel, "log_level", "INFO", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.Parse()
 
+	passphrase := os.Getenv("MIX_CLIENT_VAULT_PASSPHRASE")
+	if len(passphrase) == 0 {
+		panic("Aborting because bash env var not set: MIX_CLIENT_VAULT_PASSPHRASE")
+	}
+
 	if configFilePath == "" {
 		log.Error("you must specify a configuration file")
 		flag.Usage()
@@ -114,14 +119,9 @@ func main() {
 
 	if shouldAutogenKeys == true {
 		// XXX todo: autogen keys
-		//tomlConfig.Client.ProviderAuthPublicKeyFile
-		//ioutil.ReadFile(tomlConfig.Client.ProviderAuthPublicKeyFile)
-		//tomlConfig.Client.ProviderAuthPrivateKeyFile
-		//tomlConfig.Client.ClientPublicKeyFile
-		//tomlConfig.Client.ClientPrivateKeyFile
 	}
 
-	config, err = tomlConfig.Config()
+	config, err = tomlConfig.Config(passphrase)
 	if err != nil {
 		panic(err)
 	}

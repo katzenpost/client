@@ -46,7 +46,8 @@ type TomlConfig struct {
 	Client Client
 }
 
-// Client is a mix client configuration struct
+// Client is a mix client configuration struct.
+// This struct is referenced by TomlConfig struct
 type Client struct {
 	Username                   string
 	Provider                   string
@@ -60,7 +61,29 @@ type Client struct {
 	SMTPProxyAddress           string
 }
 
-func (t *TomlConfig) Config() (*Config, error) {
+func (t *TomlConfig) Config(passphrase string) (*Config, error) {
+
+	providerAuthPubKey, err := ioutil.ReadFile(t.Client.ProviderAuthPublicKeyFile)
+	if err != nil {
+		log.Critical("Failed to read key file")
+		os.Exit(1)
+	}
+	providerAuthPrivKey, err := ioutil.ReadFile(t.Client.ProviderAuthPrivateKeyFile)
+	if err != nil {
+		log.Critical("Failed to read key file")
+		os.Exit(1)
+	}
+	clientPubKey, err := ioutil.ReadFile(t.Client.ClientPublicKeyFile)
+	if err != nil {
+		log.Critical("Failed to read key file")
+		os.Exit(1)
+	}
+	clientPrivKey, err := ioutil.ReadFile(t.Client.ClientPrivateKeyFile)
+	if err != nil {
+		log.Critical("Failed to read key file")
+		os.Exit(1)
+	}
+
 	// publicKeyBase64, err := ioutil.ReadFile(t.Client.PublicKeyFile)
 	// if err != nil {
 	// 	return nil, err
