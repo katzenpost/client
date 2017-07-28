@@ -18,35 +18,37 @@
 package util
 
 import (
-	"crypto/rand"
+	//"crypto/rand"
 	//"encoding/base64"
-	"io/ioutil"
+	//"io/ioutil"
 	"net"
 
-	"github.com/katzenpost/core/wire/common"
+	//"github.com/katzenpost/core/wire/common"
 	"github.com/katzenpost/core/wire/server"
-	"github.com/pelletier/go-toml"
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("mixclient")
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	config  *Config
-	session *common.Session
-	conn    net.Conn
+	config *Config
+	//session *common.Session
+	conn net.Conn
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
 func NewClientDaemon(config *Config) *ClientDaemon {
-	sessionConfig := common.Config{
-		Initiator:  true,
-		Identifier: config.Identifier,
-		Random:     rand.Reader,
-		//LongtermEd25519PublicKey:  config.PublicEd25519Key,
-		//LongtermEd25519PrivateKey: config.PrivateEd25519Key,
-	}
+	// sessionConfig := common.Config{
+	// 	Initiator:  true,
+	// 	Identifier: config.Identifier,
+	// 	Random:     rand.Reader,
+	// 	//LongtermEd25519PublicKey:  config.PublicEd25519Key,
+	// 	//LongtermEd25519PrivateKey: config.PrivateEd25519Key,
+	// }
 	c := ClientDaemon{
-		config:  config,
-		session: common.New(&sessionConfig, nil),
+		config: config,
+		//session: common.New(&sessionConfig, nil),
 	}
 	return &c
 }
@@ -77,30 +79,30 @@ func (c *ClientDaemon) Stop() {
 	log.Debug("Client shutdown.")
 }
 
-func (c *ClientDaemon) Dial(network, address string) error {
-	var err error
-	c.conn, err = net.Dial(network, address)
-	if err != nil {
-		log.Notice("failed to dial provider")
-		return err
-	}
-	return c.session.Initiate(c.conn)
-}
+// func (c *ClientDaemon) Dial(network, address string) error {
+// 	var err error
+// 	c.conn, err = net.Dial(network, address)
+// 	if err != nil {
+// 		log.Notice("failed to dial provider")
+// 		return err
+// 	}
+// 	return c.session.Initiate(c.conn)
+// }
 
-func (c *ClientDaemon) Read() (*common.Command, error) {
-	cmd, err := c.session.Receive()
-	if err != nil {
-		log.Debugf("session read error: %s", err)
-		return nil, err
-	}
-	return &cmd, nil
-}
+// func (c *ClientDaemon) Read() (*common.Command, error) {
+// 	cmd, err := c.session.Receive()
+// 	if err != nil {
+// 		log.Debugf("session read error: %s", err)
+// 		return nil, err
+// 	}
+// 	return &cmd, nil
+// }
 
-func (c *ClientDaemon) Write(cmd *common.Command) error {
-	err := c.session.Send(*cmd)
-	if err != nil {
-		log.Debugf("session write error: %s", err)
-		return err
-	}
-	return nil
-}
+// func (c *ClientDaemon) Write(cmd *common.Command) error {
+// 	err := c.session.Send(*cmd)
+// 	if err != nil {
+// 		log.Debugf("session write error: %s", err)
+// 		return err
+// 	}
+// 	return nil
+// }

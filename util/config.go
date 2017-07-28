@@ -17,6 +17,12 @@
 // Package util provides client utilities
 package util
 
+import (
+	"io/ioutil"
+
+	"github.com/pelletier/go-toml"
+)
+
 type Config struct {
 	Identifier             []byte
 	ProviderAuthPublicKey  []byte
@@ -52,26 +58,22 @@ type Client struct {
 
 func (t *TomlConfig) Config(passphrase string) (*Config, error) {
 
-	providerAuthPubKey, err := ioutil.ReadFile(t.Client.ProviderAuthPublicKeyFile)
-	if err != nil {
-		log.Critical("Failed to read key file")
-		os.Exit(1)
-	}
-	providerAuthPrivKey, err := ioutil.ReadFile(t.Client.ProviderAuthPrivateKeyFile)
-	if err != nil {
-		log.Critical("Failed to read key file")
-		os.Exit(1)
-	}
-	clientPubKey, err := ioutil.ReadFile(t.Client.ClientPublicKeyFile)
-	if err != nil {
-		log.Critical("Failed to read key file")
-		os.Exit(1)
-	}
-	clientPrivKey, err := ioutil.ReadFile(t.Client.ClientPrivateKeyFile)
-	if err != nil {
-		log.Critical("Failed to read key file")
-		os.Exit(1)
-	}
+	// providerAuthPubKey, err := ioutil.ReadFile(t.Client.ProviderAuthPublicKeyFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// providerAuthPrivKey, err := ioutil.ReadFile(t.Client.ProviderAuthPrivateKeyFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// clientPubKey, err := ioutil.ReadFile(t.Client.ClientPublicKeyFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// clientPrivKey, err := ioutil.ReadFile(t.Client.ClientPrivateKeyFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// publicKeyBase64, err := ioutil.ReadFile(t.Client.PublicKeyFile)
 	// if err != nil {
