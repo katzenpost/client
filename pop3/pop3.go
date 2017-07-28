@@ -127,6 +127,7 @@ func (s *Server) Start() {
 				return
 			}
 			ses := newSession(s, conn)
+			ses.state = stateAuthorization
 			go ses.handleConn()
 		}
 	}()
