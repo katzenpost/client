@@ -1,4 +1,4 @@
-// smtpd.go - mix network smtp submission proxy
+// smtp.go - mix network smtp submission proxy
 // Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package main
+// Package util provides client utilities
+package util
 
 import (
 	"bytes"
