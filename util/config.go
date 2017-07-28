@@ -23,86 +23,20 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
-type Config struct {
-	Identifier             []byte
-	ProviderAuthPublicKey  []byte
-	ProviderAuthPrivateKey []byte
-	ClientPublicKey        []byte
-	ClientPrivateKey       []byte
-	ProviderNetwork        string
-	ProviderAddress        string
-	SMTPProxyNetwork       string
-	SMTPProxyAddress       string
-	ShouldAutoGenKeys      bool
-}
-
 // TomlConfig is used for unmarshaling our client toml configuration
 type TomlConfig struct {
-	Client Client
+	Accounts         []Account
+	ProviderPinnings []ProviderPining
 }
 
-// Client is a mix client configuration struct.
-// This struct is referenced by TomlConfig struct
-type Client struct {
-	Username                   string
-	Provider                   string
-	ProviderAuthPublicKeyFile  string
-	ProviderAuthPrivateKeyFile string
-	ClientPublicKeyFile        string
-	ClientPrivateKeyFile       string
-	ProviderNetwork            string
-	ProviderAddress            string
-	SMTPProxyNetwork           string
-	SMTPProxyAddress           string
+type Account struct {
+	Name     string
+	Provider string
 }
 
-func (t *TomlConfig) Config(passphrase string) (*Config, error) {
-
-	// providerAuthPubKey, err := ioutil.ReadFile(t.Client.ProviderAuthPublicKeyFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// providerAuthPrivKey, err := ioutil.ReadFile(t.Client.ProviderAuthPrivateKeyFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// clientPubKey, err := ioutil.ReadFile(t.Client.ClientPublicKeyFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// clientPrivKey, err := ioutil.ReadFile(t.Client.ClientPrivateKeyFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// publicKeyBase64, err := ioutil.ReadFile(t.Client.PublicKeyFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// privateKeyBase64, err := ioutil.ReadFile(t.Client.PrivateKeyFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// publicKey, err := base64.StdEncoding.DecodeString(string(publicKeyBase64))
-	// if err != nil {
-	// 	log.Debugf("failed to decode base64 public key: %s", err)
-	// 	return nil, err
-	// }
-	// privateKey, err := base64.StdEncoding.DecodeString(string(privateKeyBase64))
-	// if err != nil {
-	// 	log.Debugf("failed to decode base64 private key: %s", err)
-	// 	return nil, err
-	// }
-	c := Config{
-		Identifier: []byte(t.Client.Username + t.Client.Provider),
-		// PublicEd25519Key:  publicKey,
-		// PrivateEd25519Key: privateKey,
-		ProviderNetwork:  t.Client.ProviderNetwork,
-		ProviderAddress:  t.Client.ProviderAddress,
-		SMTPProxyNetwork: t.Client.SMTPProxyNetwork,
-		SMTPProxyAddress: t.Client.SMTPProxyAddress,
-	}
-	return &c, nil
+type ProviderPining struct {
+	Name            string
+	CertificateFile string
 }
 
 // LoadConfig returns a *Config given a filepath to a configuration file

@@ -1,18 +1,18 @@
 
 [[Account]]
-  user_identifier = "Alice"
+  name = "Alice"
   provider = "Acme"
 
 [[Account]]
-  user_identifier = "Carol"
+  name = "Carol"
   provider = "ProviderOfNet"
 
 [[Account]]
-  user_identifier = "Eve"
+  name = "Eve"
   provider = "Trustworthy"
 
 # always use this certificate with Acme
 # regardless of what the PKI says to use
 [[ProviderPinning]]
-name = "Acme"
-certificate = "/blah/blah/certs/acme.pem"
+  name = "Acme"
+  certificate = "/blah/blah/certs/acme.pem"
