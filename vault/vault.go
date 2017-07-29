@@ -104,7 +104,7 @@ func (v *Vault) Seal(plaintext []byte) error {
 	out := []byte{}
 	ciphertext := secretbox.Seal(out, plaintext, &nonce, &sealKey)
 
-	fileMode := os.FileMode(0777)
+	fileMode := os.FileMode(0600)
 	payload := make([]byte, len(ciphertext)+SecretboxNoneSize)
 	copy(payload, nonce[:])
 	copy(payload[SecretboxNoneSize:], ciphertext)

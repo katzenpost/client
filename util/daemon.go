@@ -18,43 +18,74 @@
 package util
 
 import (
-	//"crypto/rand"
-	//"encoding/base64"
-	//"io/ioutil"
-	"net"
+	"crypto/subtle"
+	"fmt"
 
-	//"github.com/katzenpost/core/wire/common"
+	//"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
 )
 
+const (
+	DefaultSMTPNetwork = "tcp"
+	DefaultSMTPAddress = "127.0.0.1:2525"
+)
+
 var log = logging.MustGetLogger("mixclient")
+
+type peerAuthenticator struct {
+	creds *wire.PeerCredentials
+}
+
+// IsPeerValid authenticates the remote peer's credentials, returning true
+// iff the peer is valid.
+func (a *peerAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
+	if subtle.ConstantTimeCompare(a.creds.AdditionalData, peer.AdditionalData) != 1 {
+		return false
+	}
+	if subtle.ConstantTimeCompare(a.creds.PublicKey.Bytes(), peer.PublicKey.Bytes()) != 1 {
+		return false
+	}
+
+	return true
+}
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	//session *common.Session
-	conn net.Conn
+	config     *TomlConfig
+	passphrase string
+	keysDir    string
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
-func NewClientDaemon(config *Config) *ClientDaemon {
-
-	sessionConfig := wire.SessionConfig{}
-	session, err := NewSession(&sessionConfig, true)
-
-	d := ClientDaemon{
-	//session: common.New(&sessionConfig, nil),
+func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (*ClientDaemon, error) {
+	tree, err := LoadConfigTree(configFile)
+	if err != nil {
+		return nil, err
 	}
-	return &d
+	fmt.Println("TREE", tree)
+	d := ClientDaemon{
+		//config:     tomlConfig,
+		passphrase: passphrase,
+		keysDir:    keysDirPath,
+	}
+	return &d, nil
 }
 
-// Start starts the client services
+// Start starts the client services:
+// 1. SMTP submission proxy
+// 2. POP3 retreival proxy
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
 
-	log.Noticef("Starting SMTP submission proxy on %s:%s", c.config.SMTPProxyNetwork, c.config.SMTPProxyAddress)
-
-	smtpServer := server.New(c.config.SMTPProxyNetwork, c.config.SMTPProxyAddress, smtpServerHandler, nil) // XXX todo: use logging
+	var smtpServer *server.Server
+	// XXX todo: use logging
+	if c.config.SMTPNetwork == "" || c.config.SMTPAddress == "" {
+		smtpServer = server.New(c.config.SMTPNetwork, c.config.SMTPAddress, smtpServerHandler, nil)
+	} else {
+		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpServerHandler, nil)
+	}
 	err := smtpServer.Start()
 	if err != nil {
 		panic(err)

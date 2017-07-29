@@ -16,3 +16,7 @@
 [[ProviderPinning]]
   name = "Acme"
   certificate = "/blah/blah/certs/acme.pem"
+
+[SMTPProxy]
+  Network = "tcp"
+  Address = "127.0.0.1:2525"
