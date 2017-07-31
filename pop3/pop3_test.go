@@ -199,16 +199,16 @@ func (b TestBackend) NewSession(user, pass []byte) (BackendSession, error) {
 func TestPop3(t *testing.T) {
 	assert := assert.New(t)
 
-	testListener := NewTestListener()
 	testBackend := TestBackend{}
 	server := Server{
-		ln: testListener,
-		b:  testBackend,
+		b: testBackend,
 	}
-	server.Start()
-	defer server.Stop()
+	//server.Start()
+	//defer server.Stop()
 
-	clientConn, err := testListener.Dial("tcp", "test123")
+	//clientConn, err := testListener.Dial("tcp", "test123")
+	clientConn, _ := net.Pipe()
+	//session := newSession(&server, clientConn)
 
 	rcvBuf := make([]byte, 666)
 	count, err := clientConn.Read(rcvBuf)
@@ -216,18 +216,20 @@ func TestPop3(t *testing.T) {
 
 	fmt.Println("received server greeting: ", string(rcvBuf))
 
-	clientConn.Write([]byte(string("user alice\n")))
+	_, err = clientConn.Write([]byte(string("user alice\n")))
+	assert.NoError(err, "write fail")
 	count, err = clientConn.Read(rcvBuf)
 	assert.NoError(err, fmt.Sprintf("read fail: read count %d", count))
 	fmt.Println("server response: ", string(rcvBuf))
 
-	clientConn.Write([]byte(string("pass teatime476\n")))
+	_, err = clientConn.Write([]byte(string("pass teatime476\n")))
+	assert.NoError(err, "write fail")
 	count, err = clientConn.Read(rcvBuf)
 	assert.NoError(err, fmt.Sprintf("read fail: read count %d", count))
 	fmt.Println("server response: ", string(rcvBuf))
 
-	clientConn.Write([]byte(string("list\n")))
-
+	_, err = clientConn.Write([]byte(string("list\n")))
+	assert.NoError(err, "write fail")
 	clientReader := bufio.NewReader(clientConn)
 	message, err := clientReader.ReadString('.')
 	assert.NoError(err, "ReadString fail")
