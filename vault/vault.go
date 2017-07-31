@@ -18,8 +18,9 @@
 package vault
 
 import (
+	"bytes"
 	"crypto/rand"
-	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -36,8 +37,10 @@ const (
 
 // Vault is used to Encrypt sensitive data to disk
 type Vault struct {
+	Type       string
 	Passphrase string
 	Path       string
+	Email      string
 }
 
 func (v *Vault) stretch(passphrase string) ([]byte, error) {
@@ -55,18 +58,20 @@ func (v *Vault) stretch(passphrase string) ([]byte, error) {
 }
 
 func (v *Vault) Open() ([]byte, error) {
-	base64Payload, err := ioutil.ReadFile(v.Path)
+	pemPayload, err := ioutil.ReadFile(v.Path)
 	if err != nil {
 		return nil, err
 	}
-
-	payloadCiphertext, err := base64.StdEncoding.DecodeString(string(base64Payload))
-	if err != nil {
+	block, _ := pem.Decode(pemPayload)
+	if block == nil {
 		return nil, err
+	}
+	if len(block.Headers) == 0 {
+		return nil, errors.New("PEM Header does not contain e-mail address.")
 	}
 
 	var nonce [24]byte
-	copy(nonce[:], payloadCiphertext[0:24])
+	copy(nonce[:], block.Bytes[0:24])
 
 	var key [32]byte
 	stretchedKey, err := v.stretch(v.Passphrase)
@@ -75,8 +80,8 @@ func (v *Vault) Open() ([]byte, error) {
 	}
 	copy(key[:], stretchedKey)
 
-	ciphertext := make([]byte, len(payloadCiphertext[24:]))
-	copy(ciphertext, payloadCiphertext[24:])
+	ciphertext := make([]byte, len(block.Bytes[24:]))
+	copy(ciphertext, block.Bytes[24:])
 
 	out := []byte{}
 	plaintext, isAuthed := secretbox.Open(out, ciphertext, &nonce, &key)
@@ -108,9 +113,19 @@ func (v *Vault) Seal(plaintext []byte) error {
 	payload := make([]byte, len(ciphertext)+SecretboxNoneSize)
 	copy(payload, nonce[:])
 	copy(payload[SecretboxNoneSize:], ciphertext)
-	base64Ciphertext := base64.StdEncoding.EncodeToString([]byte(payload))
 
-	err = ioutil.WriteFile(v.Path, []byte(base64Ciphertext), fileMode)
+	headers := map[string]string{
+		"email": v.Email,
+	}
+	block := pem.Block{
+		Type:    v.Type,
+		Headers: headers,
+		Bytes:   payload,
+	}
+	buf := new(bytes.Buffer)
+	pem.Encode(buf, &block)
+
+	err = ioutil.WriteFile(v.Path, buf.Bytes(), fileMode)
 	if err != nil {
 		return err
 	}

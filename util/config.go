@@ -63,6 +63,7 @@ func formKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 }
 
 func writeNewKeypair(keysDir, prefix, name, provider, passphrase string) error {
+	log.Notice("Writing new keypair")
 	privateKeyFile := formKeyFileName(keysDir, prefix, name, provider, "private")
 	publicKeyFile := formKeyFileName(keysDir, prefix, name, provider, "public")
 	_, err1 := os.Stat(privateKeyFile)
@@ -72,18 +73,25 @@ func writeNewKeypair(keysDir, prefix, name, provider, passphrase string) error {
 		if err != nil {
 			return err
 		}
+		email := fmt.Sprintf("%s@%s", name, provider)
 		v := vault.Vault{
+			Type:       "private",
+			Email:      email,
 			Passphrase: passphrase,
 			Path:       privateKeyFile,
 		}
+		log.Notice("performing key stretching computation")
 		err = v.Seal(privateKey.Bytes())
 		if err != nil {
 			return err
 		}
 		v = vault.Vault{
+			Type:       "public",
+			Email:      email,
 			Passphrase: passphrase,
 			Path:       publicKeyFile,
 		}
+		log.Notice("performing key stretching computation")
 		err = v.Seal(privateKey.PublicKey().Bytes())
 		if err != nil {
 			return err
