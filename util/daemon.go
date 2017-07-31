@@ -76,15 +76,18 @@ func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (
 // 2. POP3 retreival proxy
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
-
 	var smtpServer *server.Server
-	// XXX todo: use logging
+	submissionProxy := MailSubmissionProxy{}
 	if c.config.Get("SMTPProxy.Network") == nil || c.config.Get("SMTPProxy.Address") == nil {
-		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpServerHandler, nil)
+		smtpServer = server.New(DefaultSMTPNetwork,
+			DefaultSMTPAddress,
+			submissionProxy.handleSMTPSubmission,
+			nil)
 	} else {
 		smtpServer = server.New(c.config.Get("SMTPProxy.Network").(string),
 			c.config.Get("SMTPProxy.Address").(string),
-			smtpServerHandler, nil)
+			submissionProxy.handleSMTPSubmission,
+			nil)
 	}
 	err := smtpServer.Start()
 	if err != nil {

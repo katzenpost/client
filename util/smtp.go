@@ -44,7 +44,13 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func smtpServerHandler(conn net.Conn) error {
+// MailSubmissionProxy handles SMTP mail submissions
+// and wraps them in many layers of crypto and then sends
+// them to the "Provider"
+type MailSubmissionProxy struct {
+}
+
+func (p *MailSubmissionProxy) handleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
