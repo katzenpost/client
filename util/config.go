@@ -18,7 +18,9 @@
 package util
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/katzenpost/client/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -61,30 +63,35 @@ func formKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 }
 
 func writeNewKeypair(keysDir, prefix, name, provider, passphrase string) error {
-	privateKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return err
+	privateKeyFile := formKeyFileName(keysDir, prefix, name, provider, "private")
+	publicKeyFile := formKeyFileName(keysDir, prefix, name, provider, "public")
+	_, err1 := os.Stat(privateKeyFile)
+	_, err2 := os.Stat(publicKeyFile)
+	if os.IsNotExist(err1) && os.IsNotExist(err2) {
+		privateKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return err
+		}
+		v := vault.Vault{
+			Passphrase: passphrase,
+			Path:       privateKeyFile,
+		}
+		err = v.Seal(privateKey.Bytes())
+		if err != nil {
+			return err
+		}
+		v = vault.Vault{
+			Passphrase: passphrase,
+			Path:       publicKeyFile,
+		}
+		err = v.Seal(privateKey.PublicKey().Bytes())
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return errors.New("key file already exists. aborting")
 	}
-	keyFileName := formKeyFileName(keysDir, prefix, name, provider, "private")
-	fmt.Println("keyfilename", keyFileName)
-	v := vault.Vault{
-		Passphrase: passphrase,
-		Path:       keyFileName,
-	}
-	err = v.Seal(privateKey.Bytes())
-	if err != nil {
-		return err
-	}
-	keyFileName = formKeyFileName(keysDir, prefix, name, provider, "public")
-	v = vault.Vault{
-		Passphrase: passphrase,
-		Path:       keyFileName,
-	}
-	err = v.Seal(privateKey.PublicKey().Bytes())
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // GenerateKeys creates the key files necessary to use the client
@@ -93,23 +100,24 @@ func GenerateKeys(configFilePath, keysDir, passphrase string) error {
 	if err != nil {
 		return err
 	}
-	accounts := tree.Get("Account")
-
-	fmt.Println("accounts", accounts)
-	//fmt.Println("tree", tree)
-	// for i := 0; i < len(int(configTree.Get("Accounts"))); i++ {
-	// 	fmt.Println("i", i)
-	// 	// wire protocol keys
-	// 	err = writeNewKeypair(keysDir, "wire", config.Accounts[i].Name, config.Accounts[i].Provider, passphrase)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-
-	// 	// end to end messaging keys
-	// 	err = writeNewKeypair(keysDir, "e2e", config.Accounts[i].Name, config.Accounts[i].Provider, passphrase)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
+	accountsTree := tree.Get("Account").([]*toml.Tree)
+	for i := 0; i < len(accountsTree); i++ {
+		name := accountsTree[i].Get("name")
+		provider := accountsTree[i].Get("provider")
+		if name != nil && provider != nil {
+			// wire protocol keys
+			err = writeNewKeypair(keysDir, "wire", name.(string), provider.(string), passphrase)
+			if err != nil {
+				return err
+			}
+			// end to end messaging keys
+			err = writeNewKeypair(keysDir, "e2e", name.(string), provider.(string), passphrase)
+			if err != nil {
+				return err
+			}
+		} else {
+			return errors.New("received nil Account name or provider")
+		}
+	}
 	return nil
 }

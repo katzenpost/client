@@ -19,7 +19,6 @@ package util
 
 import (
 	"crypto/subtle"
-	"fmt"
 
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
@@ -64,7 +63,6 @@ func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("TREE", configTree)
 	d := ClientDaemon{
 		config:     configTree,
 		passphrase: passphrase,
@@ -84,7 +82,9 @@ func (c *ClientDaemon) Start() error {
 	if c.config.Get("SMTPProxy.Network") == nil || c.config.Get("SMTPProxy.Address") == nil {
 		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpServerHandler, nil)
 	} else {
-		smtpServer = server.New(c.config.Get("SMTPProxy.Network").(string), c.config.Get("SMTPProxy.Address").(string), smtpServerHandler, nil)
+		smtpServer = server.New(c.config.Get("SMTPProxy.Network").(string),
+			c.config.Get("SMTPProxy.Address").(string),
+			smtpServerHandler, nil)
 	}
 	err := smtpServer.Start()
 	if err != nil {
