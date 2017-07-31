@@ -24,12 +24,30 @@ import (
 	"net"
 	"net/mail"
 
+	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
 
+type logWriter struct {
+	log *logging.Logger
+}
+
+func newLogWriter(log *logging.Logger) *logWriter {
+	writer := logWriter{
+		log: log,
+	}
+	return &writer
+}
+
+func (w *logWriter) Write(p []byte) (int, error) {
+	w.log.Debug(string(p))
+	return len(p), nil
+}
+
 func smtpServerHandler(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
-	smtpConn := smtpd.NewConn(conn, cfg, nil)
+	logWriter := newLogWriter(log)
+	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
 	for {
 		event := smtpConn.Next()
 		if event.What == smtpd.DONE || event.What == smtpd.ABORT {
