@@ -21,10 +21,10 @@ import (
 	"crypto/subtle"
 	"fmt"
 
-	//"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
+	"github.com/pelletier/go-toml"
 )
 
 const (
@@ -53,20 +53,20 @@ func (a *peerAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	config     *TomlConfig
+	config     *toml.Tree
 	passphrase string
 	keysDir    string
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
 func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (*ClientDaemon, error) {
-	tree, err := LoadConfigTree(configFile)
+	configTree, err := LoadConfigTree(configFile)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("TREE", tree)
+	fmt.Println("TREE", configTree)
 	d := ClientDaemon{
-		//config:     tomlConfig,
+		config:     configTree,
 		passphrase: passphrase,
 		keysDir:    keysDirPath,
 	}
@@ -81,10 +81,10 @@ func (c *ClientDaemon) Start() error {
 
 	var smtpServer *server.Server
 	// XXX todo: use logging
-	if c.config.SMTPNetwork == "" || c.config.SMTPAddress == "" {
-		smtpServer = server.New(c.config.SMTPNetwork, c.config.SMTPAddress, smtpServerHandler, nil)
-	} else {
+	if c.config.Get("SMTPProxy.Network") == nil || c.config.Get("SMTPProxy.Address") == nil {
 		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpServerHandler, nil)
+	} else {
+		smtpServer = server.New(c.config.Get("SMTPProxy.Network").(string), c.config.Get("SMTPProxy.Address").(string), smtpServerHandler, nil)
 	}
 	err := smtpServer.Start()
 	if err != nil {
