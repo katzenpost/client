@@ -26,6 +26,7 @@ import (
 	"net/mail"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
@@ -45,33 +46,6 @@ func newLogWriter(log *logging.Logger) *logWriter {
 func (w *logWriter) Write(p []byte) (int, error) {
 	w.log.Debug(string(p))
 	return len(p), nil
-}
-
-// ciphertextBlocksFromMessage transforms the given message into a
-// slice of encrypted blocks
-func ciphertextBlocksFromMessage(senderKey *ecdh.PrivateKey, receiverKey *ecdh.PublicKey, message []byte) ([][]byte, error) {
-	// XXX todo: feature versions of this function can
-	// handle fragmentation and padding. but for now
-	// just return an error if not exactly block length.
-	// also in the future we will have several specific
-	// block sizes.
-	if len(message) != block.BlockLength {
-		return nil, errors.New("message size != block size")
-	}
-	blockHandler := block.NewHandler(senderKey, p.randomReader)
-	messageId := make([]byte, constants.MessageIDLength)
-	p.randomReader.Read(&messageId)
-	messageBlock := block.Block{
-		MessageID:   messageId,
-		TotalBlocks: uint16(1), // XXX
-		BlockID:     uint16(0), // XXX
-		Block:       []byte(message),
-	}
-	ciphertext := blockHandler.Encrypt(receiverKey, messageBlock)
-	ret := [][]byte{
-		ciphertext,
-	}
-	return ret
 }
 
 // SubmitProxy handles SMTP mail submissions
@@ -121,8 +95,72 @@ func (p *SubmitProxy) getSenderReceiverKeys(sender, receiver string) (*ecdh.Priv
 	return sendKey, recipientPubKey, nil
 }
 
-func (p *SubmitProxy) sendBlockCiphertext(sender, receiver string, blockCiphertext []byte) error {
-	// XXX do stuff
+func (p *SubmitProxy) getSession(sender string) (*wire.Session, error) {
+	session, ok := p.sessionMap[sender]
+	if !ok {
+
+	}
+	// func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error)
+	session := wire.Session{} // XXX
+	return &session
+}
+
+// ciphertextBlocksFromMessage transforms the given message into a
+// slice of encrypted blocks
+func (p *SubmitProxy) encryptedBlocksFromMessage(senderKey *ecdh.PrivateKey, receiverKey *ecdh.PublicKey, message []byte) ([][]byte, error) {
+	// XXX todo: feature versions of this function can
+	// handle fragmentation and padding. but for now
+	// just return an error if not exactly block length.
+	// also in the future we will have several specific
+	// block sizes.
+	if len(message) != block.BlockLength {
+		return nil, errors.New("message size != block size")
+	}
+	blockHandler := block.NewHandler(senderKey, p.randomReader)
+	messageId := make([]byte, constants.MessageIDLength)
+	p.randomReader.Read(&messageId)
+	messageBlock := block.Block{
+		MessageID:   messageId,
+		TotalBlocks: uint16(1), // XXX
+		BlockID:     uint16(0), // XXX
+		Block:       []byte(message),
+	}
+	ciphertext := blockHandler.Encrypt(receiverKey, messageBlock)
+	ret := [][]byte{
+		ciphertext,
+	}
+	return ret
+}
+
+func (p *SubmitProxy) getWireProtocolKeys() (*ecdh.PrivateKey, *ecdh.PublicKey, error) {
+
+}
+
+func (p *SubmitProxy) composeSphinxPacket(payload []byte) ([]byte, error) {
+	var err error
+	path, err := p.createNewPath() // XXX doesn't exist yet
+	if err != nil {
+		return nil, err
+	}
+	packet, err := sphinx.NewPacket(p.RandomReader, path, payload)
+	if err != nil {
+		return nil, err
+	}
+	return packet, nil
+}
+
+func (p *SubmitProxy) sendCiphertextBlock(sender, receiver string, blockCiphertext []byte) error {
+	senderKey, receiverKey, err := p.getWireProtocolKeys(sender, receiver)
+	if err != nil {
+		return nil, nil, err
+	}
+	session := p.getSession(sender)
+	sphinxPaclet, err := p.composeSphinxPacket(blockCiphertext)
+
+	sendPacket := commands.SendPacket{
+		SphinxPacket: sphinxPacket,
+	}
+	session.SendCommand(sendCmd)
 	return nil
 }
 
@@ -131,12 +169,17 @@ func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error
 	if err != nil {
 		return err
 	}
-	blocks, err := ciphertextBlocksFromMessage(senderKey, receiverKey, message)
+
+	// XXX for the time being it always returns 1 block
+	blocks, err := encryptedBlocksFromMessage(senderKey, receiverKey, message)
 	if err != nil {
 		return err
 	}
 	for i := 0; i < len(blocks); i++ {
-		p.sendBlock(sender, receiver, blocks[i])
+		err = p.sendCiphertextBlock(sender, receiver, blocks[i])
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
