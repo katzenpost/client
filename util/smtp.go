@@ -47,6 +47,24 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func CiphertextBlocksFromMessage(message []byte) ([]byte, error) {
+	if len(message) != block.BlockLength {
+
+	}
+
+	blockHandler := block.NewHandler(p.UserKeyMap[sender], p.randomReader)
+	messageId := make([]byte, constants.MessageIDLength)
+	p.randomReader.Read(&messageId)
+	messageBlock := block.Block{
+		MessageID:   messageId,
+		TotalBlocks: uint16(1), // XXX
+		BlockID:     uint16(0), // XXX
+		Block:       []byte(event.Arg),
+	}
+	ciphertext := blockHandler.Encrypt(recipientPubKey, messageBlock)
+
+}
+
 // SubmitProxy handles SMTP mail submissions
 // and wraps them in 3 delicious layers of crypto and then sends
 // them to the "Provider":
@@ -103,8 +121,9 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			if !ok {
 				return fmt.Errorf("Indentity key lookup failure: cannot find key for %s", sender)
 			}
+
 			recipient := header.Get("To")
-			peerPubKey, err := p.userPki.GetKey(recipient)
+			recipientPubKey, err := p.userPki.GetKey(recipient)
 			if err != nil {
 				return err
 			}
@@ -115,17 +134,7 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 
 			// XXX send message; encrypt Block to peerPubKey
 			// specified sender identity
-			blockHandler := block.NewHandler(p.UserKeyMap[sender], p.randomReader)
-			messageId := make([]byte, constants.MessageIDLength)
-			p.randomReader.Read(&messageId)
-			messageBlock := block.Block{
-				MessageID:   messageId,
-				TotalBlocks: 1, // XXX
-				BlockID:     0, // XXX
-				Block:       messageBuffer.Bytes(),
-			}
-			ciphertext := blockHanlder.Encrypt(peerPubKey, messageBlock)
-
+			p.sendBlock()
 			return nil
 		}
 	}
