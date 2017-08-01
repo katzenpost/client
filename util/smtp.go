@@ -47,22 +47,31 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func CiphertextBlocksFromMessage(message []byte) ([]byte, error) {
+// ciphertextBlocksFromMessage transforms the given message into a
+// slice of encrypted blocks
+func ciphertextBlocksFromMessage(senderKey *ecdh.PrivateKey, receiverKey *ecdh.PublicKey, message []byte) ([][]byte, error) {
+	// XXX todo: feature versions of this function can
+	// handle fragmentation and padding. but for now
+	// just return an error if not exactly block length.
+	// also in the future we will have several specific
+	// block sizes.
 	if len(message) != block.BlockLength {
-
+		return nil, errors.New("message size != block size")
 	}
-
-	blockHandler := block.NewHandler(p.UserKeyMap[sender], p.randomReader)
+	blockHandler := block.NewHandler(senderKey, p.randomReader)
 	messageId := make([]byte, constants.MessageIDLength)
 	p.randomReader.Read(&messageId)
 	messageBlock := block.Block{
 		MessageID:   messageId,
 		TotalBlocks: uint16(1), // XXX
 		BlockID:     uint16(0), // XXX
-		Block:       []byte(event.Arg),
+		Block:       []byte(message),
 	}
-	ciphertext := blockHandler.Encrypt(recipientPubKey, messageBlock)
-
+	ciphertext := blockHandler.Encrypt(receiverKey, messageBlock)
+	ret := [][]byte{
+		ciphertext,
+	}
+	return ret
 }
 
 // SubmitProxy handles SMTP mail submissions
@@ -100,6 +109,38 @@ func (p *SubmitProxy) newSession(provider string) (*wire.Session, error) {
 	return session, nil
 }
 
+func (p *SubmitProxy) getSenderReceiverKeys(sender, receiver string) (*ecdh.PrivateKey, *ecdh.PublicKey, error) {
+	sendKey, ok := p.UserKeyMap[sender]
+	if !ok {
+		return nil, nil, fmt.Errorf("Indentity key lookup failure: cannot find key for %s", sender)
+	}
+	recipientPubKey, err := p.userPki.GetKey(recipient)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sendKey, recipientPubKey, nil
+}
+
+func (p *SubmitProxy) sendBlockCiphertext(sender, receiver string, blockCiphertext []byte) error {
+	// XXX do stuff
+	return nil
+}
+
+func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
+	senderKey, receiverKey, err := p.getSenderReceiverKeys(sender, receiver)
+	if err != nil {
+		return err
+	}
+	blocks, err := ciphertextBlocksFromMessage(senderKey, receiverKey, message)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(blocks); i++ {
+		p.sendBlock(sender, receiver, blocks[i])
+	}
+	return nil
+}
+
 func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)
@@ -117,24 +158,11 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			}
 			header := message.Header
 			sender := header.Get("From")
-			_, ok := p.UserKeyMap[sender]
-			if !ok {
-				return fmt.Errorf("Indentity key lookup failure: cannot find key for %s", sender)
-			}
-
-			recipient := header.Get("To")
-			recipientPubKey, err := p.userPki.GetKey(recipient)
+			receiver := header.Get("To")
+			err = p.sendMessage(sender, receiver, message)
 			if err != nil {
 				return err
 			}
-			body, err := ioutil.ReadAll(message.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			// XXX send message; encrypt Block to peerPubKey
-			// specified sender identity
-			p.sendBlock()
 			return nil
 		}
 	}
