@@ -20,10 +20,13 @@ package util
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/mail"
 
+	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
@@ -44,13 +47,42 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// MailSubmissionProxy handles SMTP mail submissions
-// and wraps them in many layers of crypto and then sends
-// them to the "Provider"
-type MailSubmissionProxy struct {
+// SubmitProxy handles SMTP mail submissions
+// and wraps them in 3 delicious layers of crypto and then sends
+// them to the "Provider":
+//
+//    * link layer / sphinx layer / end to end layer
+//
+type SubmitProxy struct {
+	Authenticator wire.PeerAuthenticator
+	RandomReader  io.Reader
+	UserKeyMap    map[string]*ecdh.PrivateKey
 }
 
-func (p *MailSubmissionProxy) handleSMTPSubmission(conn net.Conn) error {
+func NewSubmitProxy(authenticator wire.PeerAuthenticator, randomReader io.Reader, userKeyMap map[string]*ecdh.PrivateKey) *SubmitProxy {
+	submissionProxy := SubmitProxy{
+		Authenticator: authenticator,
+		RandomReader:  randomReader,
+		UserKeyMap:    userKeyMap,
+	}
+	return &submissionProxy
+}
+
+func (p *SubmitProxy) newSession(provider string) (*wire.Session, error) {
+	sessionConfig := wire.SessionConfig{
+		Authenticator:  p.Authenticator,
+		AdditionalData: []byte(provider),
+		// XXX AuthenticationKey: wireClientKey,
+		//EndClientKey: fufu,
+	}
+	session, err := wire.NewSession(&sessionConfig, true)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
@@ -61,21 +93,39 @@ func (p *MailSubmissionProxy) handleSMTPSubmission(conn net.Conn) error {
 		}
 		if event.What == smtpd.GOTDATA {
 			messageBuffer := bytes.NewBuffer([]byte(event.Arg))
-			fmt.Println("MAIL DATA")
 			message, err := mail.ReadMessage(messageBuffer)
 			if err != nil {
 				return err
 			}
 			header := message.Header
-			fmt.Println("Date:", header.Get("Date"))
-			fmt.Println("From:", header.Get("From"))
-			fmt.Println("To:", header.Get("To"))
-			fmt.Println("Subject:", header.Get("Subject"))
+			sender := header.Get("From")
+			_, ok := p.UserKeyMap[sender]
+			if !ok {
+				return fmt.Errorf("Indentity key lookup failure: cannot find key for %s", sender)
+			}
+			recipient := header.Get("To")
+			peerPubKey, err := p.userPki.GetKey(recipient)
+			if err != nil {
+				return err
+			}
 			body, err := ioutil.ReadAll(message.Body)
 			if err != nil {
 				log.Fatal(err)
 			}
-			fmt.Printf("%s", body)
+
+			// XXX send message; encrypt Block to peerPubKey
+			// specified sender identity
+			blockHandler := block.NewHandler(p.UserKeyMap[sender], p.randomReader)
+			messageId := make([]byte, constants.MessageIDLength)
+			p.randomReader.Read(&messageId)
+			messageBlock := block.Block{
+				MessageID:   messageId,
+				TotalBlocks: 1, // XXX
+				BlockID:     0, // XXX
+				Block:       messageBuffer.Bytes(),
+			}
+			ciphertext := blockHanlder.Encrypt(peerPubKey, messageBlock)
+
 			return nil
 		}
 	}

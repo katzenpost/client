@@ -28,29 +28,8 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
-// TomlConfig the mix client configuration.
-// NOTE: This struct is used for unmarshaling our client toml configuration
-type TomlConfig struct {
-	Accounts         []Account
-	ProviderPinnings []ProviderPining
-	SMTPNetwork      string
-	SMTPAddress      string
-}
-
-// Account is used to represent a mixnet client identity
-type Account struct {
-	Name     string
-	Provider string
-}
-
-// ProviderPining is used pin provider wire protocol certificate
-type ProviderPining struct {
-	Name            string
-	CertificateFile string
-}
-
-// LoadConfigTree returns a (*toml.Tree) given a filepath to a toml configuration file
-func LoadConfigTree(configFilePath string) (*toml.Tree, error) {
+// loadConfigTree returns a (*toml.Tree) given a filepath to a toml configuration file
+func loadConfigTree(configFilePath string) (*toml.Tree, error) {
 	tree, err := toml.LoadFile(configFilePath)
 	if err != nil {
 		return nil, err
@@ -60,6 +39,35 @@ func LoadConfigTree(configFilePath string) (*toml.Tree, error) {
 
 func formKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
+}
+
+func getUserKeys(configFile, passphrase, keysDir string) (map[string]*ecdh.PrivateKey, error) {
+	keysMap := make(map[string]*ecdh.PrivateKey)
+	tree, err := loadConfigTree(configFile)
+	if err != nil {
+		return nil, err
+	}
+	accountsTree := tree.Get("Account").([]*toml.Tree)
+	for i := 0; i < len(accountsTree); i++ {
+		name := accountsTree[i].Get("name").(string)
+		provider := accountsTree[i].Get("provider").(string)
+		email := fmt.Sprintf("%s@%s", name, provider)
+		keyfile := formKeyFileName(keysDir, "e2e", name, provider, "private")
+		v := vault.Vault{
+			Type:       "private",
+			Email:      email,
+			Passphrase: passphrase,
+			Path:       keyfile,
+		}
+		privateKeyBytes, err := v.Open()
+		if err != nil {
+			return nil, err
+		}
+		privateKey := new(ecdh.PrivateKey)
+		privateKey.FromBytes(privateKeyBytes)
+		keysMap[email] = privateKey
+	}
+	return keysMap, nil
 }
 
 func writeNewKeypair(keysDir, prefix, name, provider, passphrase string) error {
@@ -104,7 +112,7 @@ func writeNewKeypair(keysDir, prefix, name, provider, passphrase string) error {
 
 // GenerateKeys creates the key files necessary to use the client
 func GenerateKeys(configFilePath, keysDir, passphrase string) error {
-	tree, err := LoadConfigTree(configFilePath)
+	tree, err := loadConfigTree(configFilePath)
 	if err != nil {
 		return err
 	}

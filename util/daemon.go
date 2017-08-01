@@ -19,7 +19,11 @@ package util
 
 import (
 	"crypto/subtle"
+	"encoding/pem"
+	"io/ioutil"
 
+	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
@@ -34,37 +38,64 @@ const (
 var log = logging.MustGetLogger("mixclient")
 
 type peerAuthenticator struct {
-	creds *wire.PeerCredentials
+	keysMap map[[255]byte]*ecdh.PublicKey
+}
+
+func newPeerAuthenticator(configFile, passphrase, keysDir string) (*peerAuthenticator, error) {
+	tree, err := loadConfigTree(configFile)
+	if err != nil {
+		return nil, err
+	}
+	pinnings := tree.Get("ProviderPinning").([]*toml.Tree)
+	keysMap := make(map[[255]byte]*ecdh.PublicKey)
+	for i := 0; i < len(pinnings); i++ {
+		name := pinnings[i].Get("name").([]byte)
+		pemPayload, err := ioutil.ReadFile(pinnings[i].Get("certificate").(string))
+		if err != nil {
+			return nil, err
+		}
+		block, _ := pem.Decode(pemPayload)
+		if block == nil {
+			return nil, err
+		}
+		publicKey := new(ecdh.PublicKey)
+		publicKey.FromBytes(block.Bytes)
+		nameField := [255]byte{}
+		copy(nameField[:], name)
+		keysMap[nameField] = publicKey
+	}
+	authenticator := peerAuthenticator{
+		keysMap: keysMap,
+	}
+	return &authenticator, nil
 }
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *peerAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
-	if subtle.ConstantTimeCompare(a.creds.AdditionalData, peer.AdditionalData) != 1 {
+	nameField := [255]byte{}
+	copy(nameField[:], peer.AdditionalData)
+	_, ok := a.keysMap[nameField]
+	if !ok {
 		return false
 	}
-	if subtle.ConstantTimeCompare(a.creds.PublicKey.Bytes(), peer.PublicKey.Bytes()) != 1 {
+	if subtle.ConstantTimeCompare(a.keysMap[nameField].Bytes(), peer.PublicKey.Bytes()) != 1 {
 		return false
 	}
-
 	return true
 }
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	config     *toml.Tree
+	configFile string
 	passphrase string
 	keysDir    string
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
 func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (*ClientDaemon, error) {
-	configTree, err := LoadConfigTree(configFile)
-	if err != nil {
-		return nil, err
-	}
 	d := ClientDaemon{
-		config:     configTree,
+		configFile: configFile,
 		passphrase: passphrase,
 		keysDir:    keysDirPath,
 	}
@@ -77,19 +108,34 @@ func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
 	var smtpServer *server.Server
-	submissionProxy := MailSubmissionProxy{}
-	if c.config.Get("SMTPProxy.Network") == nil || c.config.Get("SMTPProxy.Address") == nil {
+
+	peerAuthenticator, err := newPeerAuthenticator(c.configFile, c.passphrase, c.keysDir) // XXX
+	if err != nil {
+		return err
+	}
+	userKeysMap, err := getUserKeys(c.configFile, c.passphrase, c.keysDir) // XXX
+	if err != nil {
+		return err
+	}
+	submissionProxy := NewSubmitProxy(peerAuthenticator, rand.Reader, userKeysMap)
+
+	config, err := loadConfigTree(c.configFile)
+	if err != nil {
+		return err
+	}
+
+	if config.Get("SMTPProxy.Network") == nil || config.Get("SMTPProxy.Address") == nil {
 		smtpServer = server.New(DefaultSMTPNetwork,
 			DefaultSMTPAddress,
 			submissionProxy.handleSMTPSubmission,
 			nil)
 	} else {
-		smtpServer = server.New(c.config.Get("SMTPProxy.Network").(string),
-			c.config.Get("SMTPProxy.Address").(string),
+		smtpServer = server.New(config.Get("SMTPProxy.Network").(string),
+			config.Get("SMTPProxy.Address").(string),
 			submissionProxy.handleSMTPSubmission,
 			nil)
 	}
-	err := smtpServer.Start()
+	err = smtpServer.Start()
 	if err != nil {
 		panic(err)
 	}
