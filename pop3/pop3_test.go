@@ -1,5 +1,5 @@
-// pop3_test.go - Tests Yawning's Pop3
-// Copyright (C) 2017  David Anthony Stainton
+// pop3_test.go - POP3 server tests.
+// Copyright (C) 2017  David Anthony Stainton, Yawning Angel
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,148 +19,27 @@
 package pop3
 
 import (
-	"bufio"
-	"errors"
+	"bytes"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net"
+	"net/textproto"
+	"sync"
 	"testing"
-	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type TestAddr struct {
-	NetworkString string
-	AddrString    string
-}
+const (
+	testUser = "alice"
+	testPass = "teatime475"
+)
 
-func (a TestAddr) Network() string {
-	return a.NetworkString
-}
-
-func (a TestAddr) String() string {
-	return a.AddrString
-}
-
-type End struct {
-	Reader *io.PipeReader
-	Writer *io.PipeWriter
-}
-
-func (c End) Close() error {
-	if err := c.Writer.Close(); err != nil {
-		return err
-	}
-	if err := c.Reader.Close(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (e End) Read(data []byte) (n int, err error)  { return e.Reader.Read(data) }
-func (e End) Write(data []byte) (n int, err error) { return e.Writer.Write(data) }
-
-func (e End) LocalAddr() net.Addr {
-	return TestAddr{
-		NetworkString: "tcp",
-		AddrString:    "127.0.0.1:123",
-	}
-}
-
-func (e End) RemoteAddr() net.Addr {
-	return TestAddr{
-		NetworkString: "tcp",
-		AddrString:    "127.0.0.1:567",
-	}
-}
-
-func (e End) SetDeadline(t time.Time) error      { return nil }
-func (e End) SetReadDeadline(t time.Time) error  { return nil }
-func (e End) SetWriteDeadline(t time.Time) error { return nil }
-
-type TestConn struct {
-	Server *End
-	Client *End
-}
-
-func NewConn() *TestConn {
-	serverRead, clientWrite := io.Pipe()
-	clientRead, serverWrite := io.Pipe()
-
-	return &TestConn{
-		Server: &End{
-			Reader: serverRead,
-			Writer: serverWrite,
-		},
-		Client: &End{
-			Reader: clientRead,
-			Writer: clientWrite,
-		},
-	}
-}
-
-func (c *TestConn) Close() error {
-	if err := c.Server.Close(); err != nil {
-		return err
-	}
-	if err := c.Client.Close(); err != nil {
-		return err
-	}
-	return nil
-}
-
-type TestListener struct {
-	connections chan net.Conn
-	state       chan bool
-}
-
-func NewTestListener() TestListener {
-	listener := TestListener{
-		connections: make(chan net.Conn, 0),
-		state:       make(chan bool, 0),
-	}
-	return listener
-}
-
-func (l TestListener) Accept() (net.Conn, error) {
-	fmt.Println("Accept")
-	select {
-	case newConnection := <-l.connections:
-		return newConnection, nil
-	case <-l.state:
-		return nil, errors.New("Listener closed")
-	}
-}
-
-func (l *TestListener) Dial(network, addr string) (net.Conn, error) {
-	select {
-	case <-l.state:
-		return nil, errors.New("Listener closed")
-	default:
-	}
-	serverSide, clientSide := net.Pipe()
-	l.connections <- serverSide
-	return clientSide, nil
-}
-
-func (l TestListener) Close() error {
-	return nil
-}
-
-func (l TestListener) Addr() net.Addr {
-	return TestAddr{
-		NetworkString: "pipe",
-		AddrString:    "pipe",
-	}
-}
-
-type TestBackendSession struct {
-}
+type TestBackendSession struct{}
 
 func (s TestBackendSession) Messages() ([][]byte, error) {
 	messages := [][]byte{
-		[]byte(string(`Return-Path: 
+		[]byte(`Return-Path: 
 X-Original-To: mailtest@normal.gateway.name
 Delivered-To: mailtest@normal.gateway.name
 Received: from normal.mailhost.name (node18 [192.168.2.38])
@@ -176,7 +55,20 @@ Message-Id: <20050413022403.4653B14112@normal.mailhost.name>
 Date: Tue, 12 Apr 2005 22:24:03 -0400 (EDT)
 
 lossy packet switching network
-`)),
+`),
+		[]byte(`"The time has come," the Walrus said,
+"To talk of many things:
+Of shoes-and ships-and sealing-wax-
+Of cabbages-and kings-
+And why the sea is boiling hot-
+And whether pigs have wings."
+
+.
+..
+... Byte-stuffing is hard, let's go shopping!
+..
+.
+`),
 	}
 	return messages, nil
 }
@@ -192,46 +84,132 @@ type TestBackend struct {
 }
 
 func (b TestBackend) NewSession(user, pass []byte) (BackendSession, error) {
-	fmt.Println("NewSession:", "user:", user, "pass:", pass)
+	if !bytes.Equal(user, []byte(testUser)) || !bytes.Equal(pass, []byte(testPass)) {
+		return nil, fmt.Errorf("invalid user/password: '%s'/'%s'", user, pass)
+	}
 	return TestBackendSession{}, nil
 }
 
 func TestPop3(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 
-	testBackend := TestBackend{}
-	server := Server{
-		b: testBackend,
-	}
-	//server.Start()
-	//defer server.Stop()
+	clientConn, serverConn := net.Pipe()
+	var wg sync.WaitGroup
 
-	//clientConn, err := testListener.Dial("tcp", "test123")
-	clientConn, _ := net.Pipe()
-	//session := newSession(&server, clientConn)
+	wg.Add(2)
 
-	rcvBuf := make([]byte, 666)
-	count, err := clientConn.Read(rcvBuf)
-	assert.NoError(err, fmt.Sprintf("read fail: read count %d", count))
+	go func() {
+		defer wg.Done()
+		defer clientConn.Close()
+		defer serverConn.Close()
 
-	fmt.Println("received server greeting: ", string(rcvBuf))
+		c := textproto.NewConn(clientConn)
+		defer c.Close()
 
-	_, err = clientConn.Write([]byte(string("user alice\n")))
-	assert.NoError(err, "write fail")
-	count, err = clientConn.Read(rcvBuf)
-	assert.NoError(err, fmt.Sprintf("read fail: read count %d", count))
-	fmt.Println("server response: ", string(rcvBuf))
+		// Server speaks first, expecting a banner.
+		l, err := c.ReadLine()
+		require.NoError(err, "failed reading banner")
+		t.Logf("S->C: '%s'", l)
 
-	_, err = clientConn.Write([]byte(string("pass teatime476\n")))
-	assert.NoError(err, "write fail")
-	count, err = clientConn.Read(rcvBuf)
-	assert.NoError(err, fmt.Sprintf("read fail: read count %d", count))
-	fmt.Println("server response: ", string(rcvBuf))
+		// CAPA
+		err = c.PrintfLine("CAPA")
+		require.NoError(err, "failed sending CAPA")
+		dr := c.DotReader()
+		bl, err := ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading CAPA response")
+		t.Logf("S->C: '%s'", bl)
 
-	_, err = clientConn.Write([]byte(string("list\n")))
-	assert.NoError(err, "write fail")
-	clientReader := bufio.NewReader(clientConn)
-	message, err := clientReader.ReadString('.')
-	assert.NoError(err, "ReadString fail")
-	fmt.Println("message", message)
+		// USER
+		err = c.PrintfLine("USER %s", testUser)
+		require.NoError(err, "failed sending USER")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading USER response")
+		t.Logf("S->C: '%s'", l)
+
+		// PASS
+		err = c.PrintfLine("PASS %s", testPass)
+		require.NoError(err, "failed sending PASS")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading PASS response")
+		t.Logf("S->C: '%s'", l)
+
+		// STAT
+		err = c.PrintfLine("STAT")
+		require.NoError(err, "failed sending STAT")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading STAT response")
+		t.Logf("S->C: '%s'", l)
+
+		// LIST
+		err = c.PrintfLine("LIST")
+		require.NoError(err, "failed sending LIST")
+		dr = c.DotReader()
+		bl, err = ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading LIST response")
+		t.Logf("S->C: '%s'", bl)
+
+		// RETR
+		err = c.PrintfLine("RETR 1")
+		require.NoError(err, "failed sending RETR")
+		dr = c.DotReader()
+		bl, err = ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading RETR response")
+		t.Logf("S->C: '%s'", bl)
+
+		err = c.PrintfLine("RETR 2")
+		require.NoError(err, "failed sending RETR")
+		dr = c.DotReader()
+		bl, err = ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading RETR response")
+		t.Logf("S->C: '%s'", bl)
+
+		// UIDL
+		err = c.PrintfLine("UIDL")
+		require.NoError(err, "failed sending UIDL")
+		dr = c.DotReader()
+		bl, err = ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading UIDL response")
+		t.Logf("S->C: '%s'", bl)
+
+		// DELE
+		err = c.PrintfLine("DELE 1")
+		require.NoError(err, "failed sending DELE")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading DELE response")
+		t.Logf("S->C: '%s'", l)
+
+		// NOOP
+		err = c.PrintfLine("NOOP")
+		require.NoError(err, "failed sending NOOP")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading NOOP response")
+		t.Logf("S->C: '%s'", l)
+
+		// RSET
+		err = c.PrintfLine("RSET")
+		require.NoError(err, "failed sending RSET")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading RSET response")
+		t.Logf("S->C: '%s'", l)
+
+		// QUIT
+		err = c.PrintfLine("QUIT")
+		require.NoError(err, "failed sending QUIT")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading QUIT response")
+		t.Logf("S->C: '%s'", l)
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer serverConn.Close()
+		defer clientConn.Close()
+
+		testBackend := TestBackend{}
+
+		s := NewSession(serverConn, testBackend)
+		s.Serve()
+	}()
+
+	wg.Wait()
 }
