@@ -62,13 +62,15 @@ const (
 	capUIDL           = "UIDL"
 	capImplementation = "IMPLEMENTATION Katzenpost"
 
-	stateAuthorization sessionState = iota
-	stateTransaction
-	stateUpdate
-
 	// This is larger than it needs to be (88 bytes is sufficient for all
 	// supported commands), but it doesn't hurt.
 	maxCmdLength = 128
+)
+
+const (
+	stateAuthorization sessionState = iota
+	stateTransaction
+	stateUpdate
 )
 
 var (
@@ -108,41 +110,12 @@ type BackendSession interface {
 	Close()
 }
 
-// Server is a POP3 server instance.
-type Server struct {
-	ln net.Listener
-	b  Backend
-}
+// Session is a POP3 server session.
+type Session struct {
+	conn net.Conn
+	b    Backend
+	bs   BackendSession
 
-// Start starts accepting connections.
-func (s *Server) Start() {
-	defer s.ln.Close()
-	go func() {
-		for {
-			conn, err := s.ln.Accept()
-			if err != nil {
-				if e, ok := err.(net.Error); ok && e.Temporary() {
-					continue
-				}
-				return
-			}
-			ses := newSession(s, conn)
-			ses.state = stateAuthorization
-			go ses.handleConn()
-		}
-	}()
-}
-
-// Stop stops accepting connections and tears down the server listener.
-// Existing sessions are left as is.
-func (s *Server) Stop() {
-	s.ln.Close()
-}
-
-type session struct {
-	srv   *Server
-	conn  net.Conn
-	bs    BackendSession
 	state sessionState
 
 	limRd *io.LimitedReader
@@ -154,7 +127,10 @@ type session struct {
 	cachedUIDLs     []string
 }
 
-func (s *session) handleConn() {
+// Serve provides POP3 to a Session, via the Backend specified at Session
+// initialization time.  The connection will be closed, and the POP3 mailbox
+// unlocked (if required) prior to this routine returning.
+func (s *Session) Serve() {
 	defer s.conn.Close()
 	var err error
 
@@ -174,7 +150,7 @@ func (s *session) handleConn() {
 	s.doTransaction()
 }
 
-func (s *session) doAuthorization() error {
+func (s *Session) doAuthorization() error {
 	if s.state != stateAuthorization {
 		panic(fmt.Sprintf("pop3: BUG: doAuthorization in state: %d", s.state))
 	}
@@ -236,7 +212,7 @@ authLoop:
 			// Call the backend to attempt to authenticate, and lock the mail
 			// drop.
 			var err error
-			if s.bs, err = s.srv.b.NewSession(authUser, splitL[1]); err != nil {
+			if s.bs, err = s.b.NewSession(authUser, splitL[1]); err != nil {
 				if err == ErrInUse {
 					// RFC 2499: IN-USE response code.
 					if err = s.writeErr("%s", err.Error()); err != nil {
@@ -277,7 +253,7 @@ authLoop:
 	return nil
 }
 
-func (s *session) doTransaction() {
+func (s *Session) doTransaction() {
 	if s.state != stateTransaction {
 		panic(fmt.Sprintf("pop3: BUG: doTransaction in state: %d", s.state))
 	}
@@ -340,7 +316,7 @@ func (s *session) doTransaction() {
 	}
 }
 
-func (s *session) onCmdCapa() error {
+func (s *Session) onCmdCapa() error {
 	if err := s.writeOk("Capability list follows"); err != nil {
 		return err
 	}
@@ -352,7 +328,7 @@ func (s *session) onCmdCapa() error {
 	return nil
 }
 
-func (s *session) onCmdQuit() error {
+func (s *Session) onCmdQuit() error {
 	if s.state == stateTransaction {
 		s.state = stateUpdate
 
@@ -369,7 +345,7 @@ func (s *session) onCmdQuit() error {
 	return io.EOF
 }
 
-func (s *session) onCmdStat(splitL []string) error {
+func (s *Session) onCmdStat(splitL []string) error {
 	if len(splitL) != 1 {
 		return s.writeArgErr(splitL[0])
 	}
@@ -385,7 +361,7 @@ func (s *session) onCmdStat(splitL []string) error {
 	return s.writeOk("%d %d", n, sz)
 }
 
-func (s *session) onCmdList(splitL []string) error {
+func (s *Session) onCmdList(splitL []string) error {
 	switch len(splitL) {
 	case 1:
 		// Scan listings for all messages.
@@ -416,7 +392,7 @@ func (s *session) onCmdList(splitL []string) error {
 	}
 }
 
-func (s *session) onCmdRetr(splitL []string) error {
+func (s *Session) onCmdRetr(splitL []string) error {
 	if len(splitL) != 2 {
 		return s.writeArgErr(splitL[0])
 	}
@@ -435,7 +411,7 @@ func (s *session) onCmdRetr(splitL []string) error {
 	scanner := bufio.NewScanner(bytes.NewReader(s.messages[idx-1]))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line[0] == '.' { // See RFC 1939 Section 3 ("byte-stuffed")
+		if len(line) > 0 && line[0] == '.' { // See RFC 1939 Section 3 ("byte-stuffed")
 			line = "." + line
 		}
 		if err := s.writeLine("%s", line); err != nil {
@@ -447,7 +423,7 @@ func (s *session) onCmdRetr(splitL []string) error {
 	return s.writeLine(".")
 }
 
-func (s *session) onCmdDele(splitL []string) error {
+func (s *Session) onCmdDele(splitL []string) error {
 	if len(splitL) != 2 {
 		return s.writeArgErr(splitL[0])
 	}
@@ -467,7 +443,7 @@ func (s *session) onCmdDele(splitL []string) error {
 	return s.writeOk("message %d deleted", idx)
 }
 
-func (s *session) onCmdNoop(splitL []string) error {
+func (s *Session) onCmdNoop(splitL []string) error {
 	if len(splitL) != 1 {
 		return s.writeArgErr(splitL[0])
 	}
@@ -475,7 +451,7 @@ func (s *session) onCmdNoop(splitL []string) error {
 	return s.writeOk("")
 }
 
-func (s *session) onCmdRset(splitL []string) error {
+func (s *Session) onCmdRset(splitL []string) error {
 	if len(splitL) != 1 {
 		return s.writeArgErr(splitL[0])
 	}
@@ -484,7 +460,7 @@ func (s *session) onCmdRset(splitL []string) error {
 	return s.writeOk("")
 }
 
-func (s *session) onCmdUIDL(splitL []string) error {
+func (s *Session) onCmdUIDL(splitL []string) error {
 	switch len(splitL) {
 	case 1:
 		// UIDL for all messages.
@@ -516,11 +492,11 @@ func (s *session) onCmdUIDL(splitL []string) error {
 	}
 }
 
-func (s *session) writeLine(f string, a ...interface{}) error {
+func (s *Session) writeLine(f string, a ...interface{}) error {
 	return s.wr.PrintfLine(f, a...)
 }
 
-func (s *session) writeOk(f string, a ...interface{}) error {
+func (s *Session) writeOk(f string, a ...interface{}) error {
 	// Technically this should send `+OK\r\n` if there's no additional status
 	// information, however RFC 1957 discusses ancient (1990s) clients that
 	// expect a space.
@@ -528,16 +504,16 @@ func (s *session) writeOk(f string, a ...interface{}) error {
 	return s.wr.PrintfLine("+OK %s", resp)
 }
 
-func (s *session) writeErr(f string, a ...interface{}) error {
+func (s *Session) writeErr(f string, a ...interface{}) error {
 	resp := fmt.Sprintf(f, a...)
 	return s.wr.PrintfLine("-ERR %s", resp)
 }
 
-func (s *session) writeArgErr(cmd string) error {
+func (s *Session) writeArgErr(cmd string) error {
 	return s.writeErr("invalid arguments to '%s'", cmd)
 }
 
-func (s *session) readLineBytes() ([]byte, error) {
+func (s *Session) readLineBytes() ([]byte, error) {
 	l, err := s.rd.ReadLineBytes()
 	if err != nil {
 		return nil, err
@@ -546,7 +522,7 @@ func (s *session) readLineBytes() ([]byte, error) {
 	return l, nil
 }
 
-func (s *session) readLine() (string, error) {
+func (s *Session) readLine() (string, error) {
 	l, err := s.rd.ReadLine()
 	if err != nil {
 		return "", err
@@ -555,7 +531,7 @@ func (s *session) readLine() (string, error) {
 	return l, nil
 }
 
-func (s *session) cacheUIDLs() {
+func (s *Session) cacheUIDLs() {
 	for _, v := range s.messages {
 		// Use SHA256-128 as the UIDL hash.
 		sum := sha256.Sum256(v)
@@ -563,9 +539,11 @@ func (s *session) cacheUIDLs() {
 	}
 }
 
-func newSession(srv *Server, conn net.Conn) *session {
-	s := new(session)
-	s.srv = srv
+// NewSession creates a new Session, bound to the provided net.Conn, to be
+// serviced via the provided Backend.
+func NewSession(conn net.Conn, backend Backend) *Session {
+	s := new(Session)
+	s.b = backend
 	s.conn = conn
 	s.limRd = &io.LimitedReader{R: conn, N: maxCmdLength}
 	s.rd = textproto.NewReader(bufio.NewReader(s.limRd))
