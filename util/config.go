@@ -18,10 +18,46 @@
 package util
 
 import (
+	"errors"
+	"fmt"
 	"io/ioutil"
+	"os"
 
+	"github.com/katzenpost/client/vault"
+	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/pelletier/go-toml"
 )
+
+func createKeyFileName(keysDir, prefix, name, provider, keyType string) string {
+	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
+}
+
+func writeKey(keysDir, prefix, name, provider, passphrase string) error {
+	privateKeyFile := createKeyFileName(keysDir, prefix, name, provider, "private")
+	_, err := os.Stat(privateKeyFile)
+	if os.IsNotExist(err) {
+		privateKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return err
+		}
+		email := fmt.Sprintf("%s@%s", name, provider)
+		v := vault.Vault{
+			Type:       "private",
+			Email:      email,
+			Passphrase: passphrase,
+			Path:       privateKeyFile,
+		}
+		log.Notice("performing key stretching computation")
+		err = v.Seal(privateKey.Bytes())
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return errors.New("key file already exists. aborting")
+	}
+}
 
 type Account struct {
 	Name     string
@@ -55,4 +91,28 @@ func FromFile(fileName string) (*Config, error) {
 		return nil, err
 	}
 	return &config, nil
+}
+
+// GenerateKeys creates the key files necessary to use the client
+func (c *Config) GenerateKeys(keysDir, passphrase string) error {
+	var err error
+	for i := 0; i < len(c.Account); i++ {
+		name := c.Account[i].Name
+		provider := c.Account[i].Provider
+		if name != "" && provider != "" {
+			// wire protocol keys
+			err = writeKey(keysDir, "wire", name, provider, passphrase)
+			if err != nil {
+				return err
+			}
+			// end to end messaging keys
+			err = writeKey(keysDir, "e2e", name, provider, passphrase)
+			if err != nil {
+				return err
+			}
+		} else {
+			return errors.New("received nil Account name or provider")
+		}
+	}
+	return nil
 }
