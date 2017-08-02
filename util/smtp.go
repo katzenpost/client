@@ -73,8 +73,6 @@ func (p *SubmitProxy) newSession(provider string) (*wire.Session, error) {
 	sessionConfig := wire.SessionConfig{
 		Authenticator:  p.Authenticator,
 		AdditionalData: []byte(provider),
-		// XXX AuthenticationKey: wireClientKey,
-		//EndClientKey: fufu,
 	}
 	session, err := wire.NewSession(&sessionConfig, true)
 	if err != nil {
@@ -132,13 +130,13 @@ func (p *SubmitProxy) encryptedBlocksFromMessage(senderKey *ecdh.PrivateKey, rec
 	return ret
 }
 
-func (p *SubmitProxy) getWireProtocolKeys() (*ecdh.PrivateKey, *ecdh.PublicKey, error) {
+func (p *SubmitProxy) getWireProtocolKeys(sender string) (*ecdh.PrivateKey, *ecdh.PublicKey, error) {
 
 }
 
 func (p *SubmitProxy) composeSphinxPacket(payload []byte) ([]byte, error) {
 	var err error
-	path, err := p.createNewPath() // XXX doesn't exist yet
+	path, err := p.newPath() // XXX doesn't exist yet
 	if err != nil {
 		return nil, err
 	}
@@ -149,13 +147,17 @@ func (p *SubmitProxy) composeSphinxPacket(payload []byte) ([]byte, error) {
 	return packet, nil
 }
 
+func (p *SubmitProxy) getSession() (*wire.Session, error) {
+
+}
+
 func (p *SubmitProxy) sendCiphertextBlock(sender, receiver string, blockCiphertext []byte) error {
-	senderKey, receiverKey, err := p.getWireProtocolKeys(sender, receiver)
+	senderPrivKey, providerPubKey, err := p.getWireProtocolKeys(sender)
 	if err != nil {
 		return nil, nil, err
 	}
 	session := p.getSession(sender)
-	sphinxPaclet, err := p.composeSphinxPacket(blockCiphertext)
+	sphinxPacket, err := p.composeSphinxPacket(blockCiphertext)
 
 	sendPacket := commands.SendPacket{
 		SphinxPacket: sphinxPacket,

@@ -11,12 +11,10 @@
   name = "Eve"
   provider = "Trustworthy"
 
-# always use this certificate with Acme
-# regardless of what the PKI says to use
 [[ProviderPinning]]
-  name = "Acme"
   certificate = "/blah/blah/certs/acme.pem"
+  name = "Acme"
 
 [SMTPProxy]
-  Network = "tcp"
   Address = "127.0.0.1:2525"
+  Network = "tcp"
