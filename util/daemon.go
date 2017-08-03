@@ -18,22 +18,30 @@
 package util
 
 import (
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
+)
+
+const (
+	DefaultSMTPNetwork = "tcp"
+	DefaultSMTPAddress = "127.0.0.1:2525"
 )
 
 var log = logging.MustGetLogger("mixclient")
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	configFile string
+	config     *Config
 	passphrase string
 	keysDir    string
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
-func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (*ClientDaemon, error) {
+func NewClientDaemon(config *Config, passphrase string, keysDirPath string) (*ClientDaemon, error) {
 	d := ClientDaemon{
-		configFile: configFile,
+		config:     config,
 		passphrase: passphrase,
 		keysDir:    keysDirPath,
 	}
@@ -41,11 +49,29 @@ func NewClientDaemon(configFile string, passphrase string, keysDirPath string) (
 }
 
 // Start starts the client services:
-// 1. SMTP submission proxy
-// 2. POP3 retreival proxy
+// SMTP submission proxy
+// TODO:
+// Add POP3 retreival proxy
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
-	return nil
+
+	var smtpServer *server.Server
+	var mixPKI pki.Mix = nil  // XXX
+	var userPKI UserPKI = nil // XXX
+	providerAuthenticator, err := newProviderAuthenticator(c.config)
+	if err != nil {
+		return err
+	}
+
+	smtpProxy := NewSubmitProxy(providerAuthenticator, rand.Reader, userPKI, mixPKI)
+
+	if len(c.config.SMTPProxy.Network) == 0 {
+		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpProxy.handleSMTPSubmission, nil)
+	} else {
+		smtpServer = server.New(c.config.SMTPProxy.Network, c.config.SMTPProxy.Address, smtpProxy.handleSMTPSubmission, nil)
+	}
+	err = smtpServer.Start()
+	return err
 }
 
 // Stop stops the client services

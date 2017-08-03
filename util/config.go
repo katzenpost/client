@@ -18,6 +18,7 @@
 package util
 
 import (
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -115,4 +116,28 @@ func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 		}
 	}
 	return nil
+}
+
+// GetProviderPins returns a mapping of
+// identity string to public key
+func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) {
+	pinnings := c.ProviderPinning
+	keysMap := make(map[[255]byte]*ecdh.PublicKey)
+	for i := 0; i < len(pinnings); i++ {
+		name := pinnings[i].Name
+		pemPayload, err := ioutil.ReadFile(pinnings[i].PublicKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		block, _ := pem.Decode(pemPayload)
+		if block == nil {
+			return nil, err
+		}
+		publicKey := new(ecdh.PublicKey)
+		publicKey.FromBytes(block.Bytes)
+		nameField := [255]byte{}
+		copy(nameField[:], name)
+		keysMap[nameField] = publicKey
+	}
+	return keysMap, nil
 }

@@ -24,7 +24,7 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/katzenpost/core/interfaces"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
@@ -76,14 +76,14 @@ type SubmitProxy struct {
 	randomReader io.Reader
 
 	// userPKI implements the UserPKI interface
-	userPKI interfaces.UserPKI
+	userPKI UserPKI
 
 	// mixPKI implements the MixPKI interface
-	mixPKI interfaces.MixPKI
+	mixPKI pki.Mix
 }
 
 // NewSubmitProxy
-func NewSubmitProxy(authenticator wire.PeerAuthenticator, randomReader io.Reader, userPki interfaces.UserPKI, mixPki interfaces.MixPKI) *SubmitProxy {
+func NewSubmitProxy(authenticator wire.PeerAuthenticator, randomReader io.Reader, userPki UserPKI, mixPki pki.Mix) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		authenticator: authenticator,
 		randomReader:  randomReader,
