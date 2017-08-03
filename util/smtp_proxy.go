@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"net/mail"
+	"strings"
 
 	"github.com/katzenpost/core/interfaces"
 	"github.com/katzenpost/core/wire"
@@ -99,7 +100,7 @@ func NewSubmitProxy(authenticator wire.PeerAuthenticator, randomReader io.Reader
 // and link layer authentication with the associated Provider mixnet service.
 //
 // TODO: implement the Stop and Wait ARQ protocol scheme here!
-func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
+func (p *SubmitProxy) sendMessage(sender, receiver *mail.Address, message []byte) error {
 	return nil
 }
 
@@ -129,9 +130,14 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 				return err
 			}
 			header := message.Header
-			// XXX TODO: must lowercase and properly parse From and To
-			sender := header.Get("From") // XXX
-			receiver := header.Get("To") // XXX
+			sender, err := mail.ParseAddress(strings.ToLower(header.Get("From")))
+			if err != nil {
+				return err
+			}
+			receiver, err := mail.ParseAddress(strings.ToLower(header.Get("To")))
+			if err != nil {
+				return err
+			}
 			err = p.sendMessage(sender, receiver, []byte(event.Arg))
 			if err != nil {
 				return err
