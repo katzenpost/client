@@ -63,11 +63,13 @@ func (c *ClientDaemon) Start() error {
 		return err
 	}
 
-	smtpProxy := NewSubmitProxy(providerAuthenticator, rand.Reader, userPKI, mixPKI)
+	smtpProxy := NewSubmitProxy(c.config, providerAuthenticator, rand.Reader, userPKI, mixPKI)
 
 	if len(c.config.SMTPProxy.Network) == 0 {
+		log.Debug("using default smtp proxy addr")
 		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpProxy.handleSMTPSubmission, nil)
 	} else {
+		log.Debug("not using default smtp proxy addr")
 		smtpServer = server.New(c.config.SMTPProxy.Network, c.config.SMTPProxy.Address, smtpProxy.handleSMTPSubmission, nil)
 	}
 	err = smtpServer.Start()

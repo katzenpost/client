@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/mail"
 	"os"
 
 	"github.com/katzenpost/client/vault"
@@ -140,4 +141,13 @@ func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) 
 		keysMap[nameField] = publicKey
 	}
 	return keysMap, nil
+}
+
+func (c *Config) HasIdentity(id *mail.Address) bool {
+	for i := 0; i < len(c.Account); i++ {
+		if id.Name == c.Account[i].Name && id.Address == c.Account[i].Provider {
+			return true
+		}
+	}
+	return false
 }

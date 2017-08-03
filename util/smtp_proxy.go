@@ -65,12 +65,14 @@ func (w *logWriter) Write(p []byte) (int, error) {
 // If the client stops operating before receiving the corresponding ACK message,
 // the client will later be able to retreive messages from disk and retransmit them.
 type SubmitProxy struct {
-	// Authenticator is an implementation of the wire.PeerAuthenticator interface,
+	config *Config
+
+	// authenticator is an implementation of the wire.PeerAuthenticator interface,
 	// in this case it's used by the client to authenticate the Provider using our
 	// noise based wire protocol authentication command
 	authenticator wire.PeerAuthenticator
 
-	// RandomReader is an implementation of the io.Reader interface
+	// randomReader is an implementation of the io.Reader interface
 	// which is used to generate ephemeral keys for our wire protocol's
 	// cryptographic handshake messages
 	randomReader io.Reader
@@ -83,8 +85,9 @@ type SubmitProxy struct {
 }
 
 // NewSubmitProxy
-func NewSubmitProxy(authenticator wire.PeerAuthenticator, randomReader io.Reader, userPki UserPKI, mixPki pki.Mix) *SubmitProxy {
+func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, randomReader io.Reader, userPki UserPKI, mixPki pki.Mix) *SubmitProxy {
 	submissionProxy := SubmitProxy{
+		config:        config,
 		authenticator: authenticator,
 		randomReader:  randomReader,
 		userPKI:       userPki,
@@ -106,12 +109,6 @@ func (p *SubmitProxy) sendMessage(sender, receiver *mail.Address, message []byte
 
 // handleSMTPSubmission handles the SMTP submissions
 // and proxies them to the mix network.
-// TODO:
-// 1. reject/abort upon invalid SMTP rcpt to:
-//    and invalid mail from:
-// 2. properly parse From and To fields
-// 3. lowercase the sender and receiver string if using
-//    them as keys to a map
 func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)
@@ -121,8 +118,30 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 		if event.What == smtpd.DONE || event.What == smtpd.ABORT {
 			return nil
 		}
-		// XXX todo: check for other states to determine when to
-		// reject a bad From or To
+		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
+			sender, err := mail.ParseAddress(event.Arg)
+			if err != nil {
+				smtpConn.Reject()
+				return err
+			}
+			if !p.config.HasIdentity(sender) {
+				smtpConn.Reject()
+				return nil
+			}
+		}
+		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
+			mixMap := p.mixPKI.GetLatestConsensusMap()
+			recipient, err := mail.ParseAddress(event.Arg)
+			if err != nil {
+				smtpConn.Reject()
+				return err
+			}
+			_, ok := mixMap[recipient]
+			if !ok {
+				smtpConn.Reject()
+				return nil
+			}
+		}
 		if event.What == smtpd.GOTDATA {
 			messageBuffer := bytes.NewBuffer([]byte(event.Arg))
 			message, err := mail.ReadMessage(messageBuffer)

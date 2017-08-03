@@ -11,9 +11,9 @@
   name = "Eve"
   provider = "Trustworthy"
 
-[[ProviderPinning]]
-  certificate = "/blah/blah/certs/acme.pem"
-  name = "Acme"
+#[[ProviderPinning]]
+#  certificate = "/blah/blah/certs/acme.pem"
+#  name = "Acme"
 
 [SMTPProxy]
   Address = "127.0.0.1:2525"
