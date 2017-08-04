@@ -17,5 +17,70 @@
 // Package util provides client utilities
 package util
 
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io/ioutil"
+
+	"github.com/katzenpost/core/crypto/ecdh"
+)
+
+// UserPKI is an interface that represents
+// the user end to end key retrieval mechanism
 type UserPKI interface {
+	GetKey(email string) (*ecdh.PublicKey, error)
+}
+
+type User struct {
+	Email string
+	Key   string
+}
+
+type JsonFileUserPKI struct {
+	userMap map[string]*ecdh.PublicKey
+}
+
+func (j *JsonFileUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
+	value, ok := j.userMap[email]
+	if !ok {
+		return nil, errors.New("json user pki email lookup failed")
+	}
+	return value, nil
+}
+
+func UserPKIFromJsonFile(filePath string) (*JsonFileUserPKI, error) {
+	fileData, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	err = json.Unmarshal(fileData, &users)
+	if err != nil {
+		return nil, err
+	}
+	userKeyMap := make(map[string]*ecdh.PublicKey)
+	for i := 0; i < len(users); i++ {
+		if len(users[i].Email) == 0 {
+			return nil, errors.New("nil user name error")
+		}
+		_, ok := userKeyMap[users[i].Email]
+		if ok {
+			return nil, errors.New("user name already in PKI map")
+		}
+		keyRaw, err := base64.StdEncoding.DecodeString(users[i].Key)
+		if err != nil {
+			return nil, errors.New("failed to base63 decode user key")
+		}
+		key := ecdh.PublicKey{}
+		err = key.FromBytes(keyRaw)
+		if err != nil {
+			return nil, errors.New("failed to get key from given bytes")
+		}
+		userKeyMap[users[i].Email] = &key
+	}
+	pki := JsonFileUserPKI{
+		userMap: userKeyMap,
+	}
+	return &pki, nil
 }

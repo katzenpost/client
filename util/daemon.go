@@ -36,14 +36,18 @@ type ClientDaemon struct {
 	config     *Config
 	passphrase string
 	keysDir    string
+	userPKI    UserPKI
+	mixPKI     pki.Mix
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
-func NewClientDaemon(config *Config, passphrase string, keysDirPath string) (*ClientDaemon, error) {
+func NewClientDaemon(config *Config, passphrase string, keysDirPath string, userPKI UserPKI, mixPKI pki.Mix) (*ClientDaemon, error) {
 	d := ClientDaemon{
 		config:     config,
 		passphrase: passphrase,
 		keysDir:    keysDirPath,
+		userPKI:    userPKI,
+		mixPKI:     mixPKI,
 	}
 	return &d, nil
 }
@@ -56,14 +60,12 @@ func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
 
 	var smtpServer *server.Server
-	var mixPKI pki.Mix = nil  // XXX
-	var userPKI UserPKI = nil // XXX
 	providerAuthenticator, err := newProviderAuthenticator(c.config)
 	if err != nil {
 		return err
 	}
 
-	smtpProxy := NewSubmitProxy(c.config, providerAuthenticator, rand.Reader, userPKI, mixPKI)
+	smtpProxy := NewSubmitProxy(c.config, providerAuthenticator, rand.Reader, c.userPKI, c.mixPKI)
 
 	if len(c.config.SMTPProxy.Network) == 0 {
 		log.Debug("using default smtp proxy addr")

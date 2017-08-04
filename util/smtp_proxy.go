@@ -119,30 +119,31 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			return nil
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
+			log.Debug("MAILFROM command")
 			sender, err := mail.ParseAddress(event.Arg)
 			if err != nil {
+				log.Debug("sender address parse fail")
 				smtpConn.Reject()
 				return err
 			}
-			if !p.config.HasIdentity(sender) {
+			if !p.config.HasIdentity(sender.Address) {
+				log.Debug("client identity not found")
 				smtpConn.Reject()
 				return nil
 			}
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
-			mixMap := p.mixPKI.GetLatestConsensusMap()
-			recipient, err := mail.ParseAddress(event.Arg)
+			log.Debug("RCPTTO command")
+			recipient, err := mail.ParseAddress(strings.ToLower(event.Arg))
+			_, err = p.userPKI.GetKey(recipient.Address)
 			if err != nil {
-				smtpConn.Reject()
-				return err
-			}
-			_, ok := mixMap[recipient]
-			if !ok {
+				log.Debugf("user PKI: email %s not found", recipient.Address)
 				smtpConn.Reject()
 				return nil
 			}
 		}
 		if event.What == smtpd.GOTDATA {
+			log.Debug("DATA command")
 			messageBuffer := bytes.NewBuffer([]byte(event.Arg))
 			message, err := mail.ReadMessage(messageBuffer)
 			if err != nil {

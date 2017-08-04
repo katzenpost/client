@@ -1,7 +1,7 @@
 
 [[Account]]
   name = "Alice"
-  provider = "Acme"
+  provider = "Acme.com"
 
 [[Account]]
   name = "Carol"

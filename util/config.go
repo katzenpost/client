@@ -22,8 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/mail"
 	"os"
+	"strings"
 
 	"github.com/katzenpost/client/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -59,6 +59,14 @@ func writeKey(keysDir, prefix, name, provider, passphrase string) error {
 	} else {
 		return errors.New("key file already exists. aborting")
 	}
+}
+
+func splitEmail(email string) (string, string, error) {
+	fields := strings.Split(email, "@")
+	if len(fields) != 2 {
+		return "", "", errors.New("splitEmail: email format invalid")
+	}
+	return fields[0], fields[1], nil
 }
 
 type Account struct {
@@ -143,9 +151,14 @@ func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) 
 	return keysMap, nil
 }
 
-func (c *Config) HasIdentity(id *mail.Address) bool {
+func (c *Config) HasIdentity(email string) bool {
+	name, provider, err := splitEmail(strings.ToLower(email))
+	if err != nil {
+		log.Debugf("HasIdentity: failure: %s", err)
+		return false // XXX
+	}
 	for i := 0; i < len(c.Account); i++ {
-		if id.Name == c.Account[i].Name && id.Address == c.Account[i].Provider {
+		if name == strings.ToLower(c.Account[i].Name) && provider == strings.ToLower(c.Account[i].Provider) {
 			return true
 		}
 	}
