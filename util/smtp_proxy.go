@@ -103,8 +103,14 @@ func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, random
 // and link layer authentication with the associated Provider mixnet service.
 //
 // TODO: implement the Stop and Wait ARQ protocol scheme here!
-func (p *SubmitProxy) sendMessage(sender, receiver *mail.Address, message []byte) error {
+func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
+	log.Debug("sendMessage no-op function")
 	return nil
+}
+
+func (p *SubmitProxy) filterFields(header *mail.Header) (string, error) {
+	log.Debug("filterFields no-op function")
+	return "", nil
 }
 
 // handleSMTPSubmission handles the SMTP submissions
@@ -149,16 +155,22 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			if err != nil {
 				return err
 			}
-			header := message.Header
-			sender, err := mail.ParseAddress(strings.ToLower(header.Get("From")))
+			header, err := p.filterFields(&message.Header)
 			if err != nil {
 				return err
 			}
-			receiver, err := mail.ParseAddress(strings.ToLower(header.Get("To")))
+			buf := new(bytes.Buffer)
+			buf.WriteString(header)
+			buf.ReadFrom(message.Body)
+			sender, err := mail.ParseAddress(message.Header.Get("From"))
 			if err != nil {
 				return err
 			}
-			err = p.sendMessage(sender, receiver, []byte(event.Arg))
+			receiver, err := mail.ParseAddress(message.Header.Get("To"))
+			if err != nil {
+				return err
+			}
+			err = p.sendMessage(sender.Address, receiver.Address, []byte(buf.String()))
 			if err != nil {
 				return err
 			}
