@@ -44,6 +44,9 @@ type Vault struct {
 }
 
 func (v *Vault) stretch(passphrase string) ([]byte, error) {
+	if len(passphrase) < PassphraseMinSize {
+		return nil, errors.New("passphrase too short")
+	}
 	salt := passphrase[0:SaltSize]
 	pass := passphrase[SaltSize:]
 	par := 2

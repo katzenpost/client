@@ -170,7 +170,7 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			if err != nil {
 				return err
 			}
-			err = p.sendMessage(string.ToLower(sender.Address), string.ToLower(receiver.Address), []byte(buf.String()))
+			err = p.sendMessage(strings.ToLower(sender.Address), strings.ToLower(receiver.Address), []byte(buf.String()))
 			if err != nil {
 				return err
 			}

@@ -31,12 +31,12 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
-func createKeyFileName(keysDir, prefix, name, provider, keyType string) string {
+func CreateKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
 }
 
 func writeKey(keysDir, prefix, name, provider, passphrase string) error {
-	privateKeyFile := createKeyFileName(keysDir, prefix, name, provider, "private")
+	privateKeyFile := CreateKeyFileName(keysDir, prefix, name, provider, "private")
 	_, err := os.Stat(privateKeyFile)
 	if os.IsNotExist(err) {
 		privateKey, err := ecdh.NewKeypair(rand.Reader)
