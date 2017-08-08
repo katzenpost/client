@@ -19,6 +19,7 @@ package util
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 	"net/mail"
@@ -51,8 +52,90 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// SubmitProxy handles SMTP mail submissions. This means implementing
-// Client to Provider protocol reliability as well as three layers of
+func isStringInList(key string, list []string) bool {
+	log.Debug("is string in list")
+	k := strings.ToLower(key)
+	ret := false
+	for i := 0; i < len(list); i++ {
+		log.Debugf("key %s list item %s", key, list[i])
+		if k == strings.ToLower(list[i]) {
+			return true
+		}
+	}
+	return ret
+}
+
+func getWhiteListedFields(header *mail.Header, whitelist []string) *mail.Header {
+	log.Debug("get white listed fields")
+	rHeader := make(mail.Header)
+	for k, v := range *header {
+		log.Debugf("header key %s", k)
+		if isStringInList(k, whitelist) {
+			log.Debugf("header key %s is whitelisted", k)
+			rHeader[k] = v
+		}
+	}
+	return &rHeader
+}
+
+func getMessageIdentities(message *mail.Message) (string, string, error) {
+	sender, err := mail.ParseAddress(message.Header.Get("From"))
+	if err != nil {
+		return "", "", err
+	}
+	receiver, err := mail.ParseAddress(message.Header.Get("To"))
+	if err != nil {
+		return "", "", err
+	}
+	return sender.Address, receiver.Address, nil
+}
+
+func parseMessage(message string) (*mail.Message, error) {
+	messageBuffer := bytes.NewBuffer([]byte(message))
+	m, err := mail.ReadMessage(messageBuffer)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func stringFromHeader(header mail.Header) (string, error) {
+	messageBuffer := new(bytes.Buffer)
+	for key, _ := range header {
+		value := header.Get(key)
+		_, err := messageBuffer.WriteString(fmt.Sprintf("%s: ", key))
+		if err != nil {
+			return "", err
+		}
+		_, err = messageBuffer.WriteString(fmt.Sprintf("%s\n", value))
+		if err != nil {
+			return "", err
+		}
+	}
+	return messageBuffer.String(), nil
+}
+
+func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
+	buf := new(bytes.Buffer)
+	headerStr, err := stringFromHeader(header)
+	if err != nil {
+		return "", err
+	}
+	_, err = buf.WriteString(headerStr)
+	if err != nil {
+		return "", err
+	}
+	_, err = buf.ReadFrom(body)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// SubmitProxy handles SMTP mail submissions. This means we act as an SMTP
+// daemon, accepting e-mail messages and proxying them to the mix network
+// via the Providers. Furthermore I instantiate an instance of the
+// Poisson Stop and Wait ARQ reliability protocol scheme as well as three layers of
 // crypto:
 //
 //    * link layer / sphinx layer / end to end layer
@@ -82,6 +165,8 @@ type SubmitProxy struct {
 
 	// mixPKI implements the MixPKI interface
 	mixPKI pki.Mix
+
+	whitelist []string
 }
 
 // NewSubmitProxy
@@ -92,6 +177,13 @@ func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, random
 		randomReader:  randomReader,
 		userPKI:       userPki,
 		mixPKI:        mixPki,
+		whitelist: []string{ // XXX yawning fix me
+			"To",
+			"From",
+			"Subject",
+			"MIME-Version",
+			"Content-Type",
+		},
 	}
 	return &submissionProxy
 }
@@ -105,10 +197,14 @@ func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, random
 // TODO: implement the Stop and Wait ARQ protocol scheme here!
 func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
 	log.Debug("sendMessage no-op function")
+	log.Debugf("message:\n%s\n", string(message))
 	return nil
 }
 
-func (p *SubmitProxy) filterFields(header *mail.Header) (string, error) {
+// headerFromWhitelist composes a new header compose of the fields in the given header
+// which are whitelisted.
+func (p *SubmitProxy) headerFromWhitelist(header *mail.Header, whitelist []string) (string, error) {
+
 	log.Debug("filterFields no-op function")
 	return "", nil
 }
@@ -150,27 +246,20 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 		}
 		if event.What == smtpd.GOTDATA {
 			log.Debug("DATA command")
-			messageBuffer := bytes.NewBuffer([]byte(event.Arg))
-			message, err := mail.ReadMessage(messageBuffer)
+			message, err := parseMessage(event.Arg)
 			if err != nil {
 				return err
 			}
-			header, err := p.filterFields(&message.Header)
+			sender, receiver, err := getMessageIdentities(message)
 			if err != nil {
 				return err
 			}
-			buf := new(bytes.Buffer)
-			buf.WriteString(header)
-			buf.ReadFrom(message.Body)
-			sender, err := mail.ParseAddress(message.Header.Get("From"))
+			header := getWhiteListedFields(&message.Header, p.whitelist)
+			messageString, err := stringFromHeaderBody(*header, message.Body)
 			if err != nil {
 				return err
 			}
-			receiver, err := mail.ParseAddress(message.Header.Get("To"))
-			if err != nil {
-				return err
-			}
-			err = p.sendMessage(strings.ToLower(sender.Address), strings.ToLower(receiver.Address), []byte(buf.String()))
+			err = p.sendMessage(sender, receiver, []byte(messageString))
 			if err != nil {
 				return err
 			}
