@@ -70,7 +70,7 @@ func UserPKIFromJsonFile(filePath string) (*JsonFileUserPKI, error) {
 		}
 		keyRaw, err := base64.StdEncoding.DecodeString(users[i].Key)
 		if err != nil {
-			return nil, errors.New("failed to base63 decode user key")
+			return nil, errors.New("failed to base64 decode user key")
 		}
 		key := ecdh.PublicKey{}
 		err = key.FromBytes(keyRaw)
