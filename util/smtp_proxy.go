@@ -196,7 +196,7 @@ func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, random
 //
 // TODO: implement the Stop and Wait ARQ protocol scheme here!
 func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
-	log.Debug("sendMessage no-op function")
+	log.Debugf("sendMessage no-op function: sender %s receiver %s", sender, receiver)
 	log.Debugf("message:\n%s\n", string(message))
 	return nil
 }
@@ -215,6 +215,8 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
+	sender := ""
+	receiver := ""
 	for {
 		event := smtpConn.Next()
 		if event.What == smtpd.DONE || event.What == smtpd.ABORT {
@@ -222,13 +224,14 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
 			log.Debug("MAILFROM command")
-			sender, err := mail.ParseAddress(event.Arg)
+			senderAddr, err := mail.ParseAddress(event.Arg)
 			if err != nil {
 				log.Debug("sender address parse fail")
 				smtpConn.Reject()
 				return err
 			}
-			if !p.config.HasIdentity(sender.Address) {
+			sender = senderAddr.Address
+			if !p.config.HasIdentity(sender) {
 				log.Debug("client identity not found")
 				smtpConn.Reject()
 				return nil
@@ -236,10 +239,16 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
 			log.Debug("RCPTTO command")
-			recipient, err := mail.ParseAddress(strings.ToLower(event.Arg))
-			_, err = p.userPKI.GetKey(recipient.Address)
+			receiverAddr, err := mail.ParseAddress(strings.ToLower(event.Arg))
 			if err != nil {
-				log.Debugf("user PKI: email %s not found", recipient.Address)
+				log.Debug("recipient address parse fail")
+				smtpConn.Reject()
+				return err
+			}
+			receiver = receiverAddr.Address
+			_, err = p.userPKI.GetKey(receiver)
+			if err != nil {
+				log.Debugf("user PKI: email %s not found", receiver)
 				smtpConn.Reject()
 				return nil
 			}
@@ -247,10 +256,6 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 		if event.What == smtpd.GOTDATA {
 			log.Debug("DATA command")
 			message, err := parseMessage(event.Arg)
-			if err != nil {
-				return err
-			}
-			sender, receiver, err := getMessageIdentities(message)
 			if err != nil {
 				return err
 			}
