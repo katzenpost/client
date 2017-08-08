@@ -251,6 +251,12 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			if err != nil {
 				return err
 			}
+			id := message.Header.Get("X-Panoramix-Sender-Identity-Key")
+			if len(id) != 0 {
+				log.Debug("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
+				smtpConn.Reject()
+				return nil
+			}
 			header := getWhiteListedFields(&message.Header, p.whitelist)
 			messageString, err := stringFromHeaderBody(*header, message.Body)
 			if err != nil {
