@@ -53,11 +53,9 @@ func (w *logWriter) Write(p []byte) (int, error) {
 }
 
 func isStringInList(key string, list []string) bool {
-	log.Debug("is string in list")
 	k := strings.ToLower(key)
 	ret := false
 	for i := 0; i < len(list); i++ {
-		log.Debugf("key %s list item %s", key, list[i])
 		if k == strings.ToLower(list[i]) {
 			return true
 		}
@@ -66,12 +64,9 @@ func isStringInList(key string, list []string) bool {
 }
 
 func getWhiteListedFields(header *mail.Header, whitelist []string) *mail.Header {
-	log.Debug("get white listed fields")
 	rHeader := make(mail.Header)
 	for k, v := range *header {
-		log.Debugf("header key %s", k)
 		if isStringInList(k, whitelist) {
-			log.Debugf("header key %s is whitelisted", k)
 			rHeader[k] = v
 		}
 	}
@@ -201,14 +196,6 @@ func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error
 	return nil
 }
 
-// headerFromWhitelist composes a new header compose of the fields in the given header
-// which are whitelisted.
-func (p *SubmitProxy) headerFromWhitelist(header *mail.Header, whitelist []string) (string, error) {
-
-	log.Debug("filterFields no-op function")
-	return "", nil
-}
-
 // handleSMTPSubmission handles the SMTP submissions
 // and proxies them to the mix network.
 func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
@@ -223,7 +210,6 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			return nil
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
-			log.Debug("MAILFROM command")
 			senderAddr, err := mail.ParseAddress(event.Arg)
 			if err != nil {
 				log.Debug("sender address parse fail")
@@ -238,7 +224,6 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			}
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
-			log.Debug("RCPTTO command")
 			receiverAddr, err := mail.ParseAddress(strings.ToLower(event.Arg))
 			if err != nil {
 				log.Debug("recipient address parse fail")
@@ -254,7 +239,6 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 			}
 		}
 		if event.What == smtpd.GOTDATA {
-			log.Debug("DATA command")
 			message, err := parseMessage(event.Arg)
 			if err != nil {
 				return err
