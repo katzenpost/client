@@ -52,6 +52,7 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// isStringInList returns true if key is found in list
 func isStringInList(key string, list []string) bool {
 	k := strings.ToLower(key)
 	ret := false
@@ -63,6 +64,8 @@ func isStringInList(key string, list []string) bool {
 	return ret
 }
 
+// getWhiteListedFields returns a new header composed of only
+// the entries in the given header which our found in the whitelist
 func getWhiteListedFields(header *mail.Header, whitelist []string) *mail.Header {
 	rHeader := make(mail.Header)
 	for k, v := range *header {
@@ -73,6 +76,8 @@ func getWhiteListedFields(header *mail.Header, whitelist []string) *mail.Header 
 	return &rHeader
 }
 
+// getMessageIdentities returns the sender and receiver identity strings
+// or an error
 func getMessageIdentities(message *mail.Message) (string, string, error) {
 	sender, err := mail.ParseAddress(message.Header.Get("From"))
 	if err != nil {
@@ -85,6 +90,7 @@ func getMessageIdentities(message *mail.Message) (string, string, error) {
 	return sender.Address, receiver.Address, nil
 }
 
+// parseMessage returns a parsed message structure given a string
 func parseMessage(message string) (*mail.Message, error) {
 	messageBuffer := bytes.NewBuffer([]byte(message))
 	m, err := mail.ReadMessage(messageBuffer)
@@ -94,6 +100,7 @@ func parseMessage(message string) (*mail.Message, error) {
 	return m, nil
 }
 
+// stringFromHeader serializes the header structure into a string
 func stringFromHeader(header mail.Header) (string, error) {
 	messageBuffer := new(bytes.Buffer)
 	for key, _ := range header {
@@ -110,6 +117,7 @@ func stringFromHeader(header mail.Header) (string, error) {
 	return messageBuffer.String(), nil
 }
 
+// stringFromHeaderBody serializes the given header and body
 func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 	buf := new(bytes.Buffer)
 	headerStr, err := stringFromHeader(header)
