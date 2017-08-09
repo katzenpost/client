@@ -25,8 +25,6 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
@@ -153,11 +151,6 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 type SubmitProxy struct {
 	config *Config
 
-	// authenticator is an implementation of the wire.PeerAuthenticator interface,
-	// in this case it's used by the client to authenticate the Provider using our
-	// noise based wire protocol authentication command
-	authenticator wire.PeerAuthenticator
-
 	// randomReader is an implementation of the io.Reader interface
 	// which is used to generate ephemeral keys for our wire protocol's
 	// cryptographic handshake messages
@@ -166,20 +159,15 @@ type SubmitProxy struct {
 	// userPKI implements the UserPKI interface
 	userPKI UserPKI
 
-	// mixPKI implements the MixPKI interface
-	mixPKI pki.Mix
-
 	whitelist []string
 }
 
 // NewSubmitProxy creates a new SubmitProxy struct
-func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, randomReader io.Reader, userPki UserPKI, mixPki pki.Mix) *SubmitProxy {
+func NewSubmitProxy(config *Config, randomReader io.Reader, userPki UserPKI) *SubmitProxy {
 	submissionProxy := SubmitProxy{
-		config:        config,
-		authenticator: authenticator,
-		randomReader:  randomReader,
-		userPKI:       userPki,
-		mixPKI:        mixPki,
+		config:       config,
+		randomReader: randomReader,
+		userPKI:      userPki,
 		whitelist: []string{ // XXX yawning fix me
 			"To",
 			"From",
