@@ -1,0 +1,20 @@
+
+[[Account]]
+  name = "alice"
+  provider = "acme.com"
+
+[[Account]]
+  name = "malory"
+  provider = "fsb.ru"
+
+# optional provider pinning is optional
+#[[ProviderPinning]]
+#  certificate = "/blah/blah/certs/acme.pem"
+#  name = "Acme"
+
+[SMTPProxy]
+  Address = "127.0.0.1:2525"
+  Network = "tcp"
+
+# the default pop3 proxy settings will be used if unspecified here
+

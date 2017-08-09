@@ -1,0 +1,84 @@
+{
+    "MixDescriptors": [
+        {
+            "Nickname": "nsamix101",
+            "ID": "0xZl3DFMIKm0IswSlU3Km1zuH9ZRJn+tjRbkSziADOk=",
+            "LoadWeight": 3,
+            "TopologyLayer": 1,
+            "EpochAPublicKey": "/31TTHGk+sGI9DdTOBCy7Nv1q1kBfYq886ahSkAktA4=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11234
+        },
+        {
+            "Nickname": "nsamix102",
+            "ID": "QSrbWRloTkoYQbINX+usdeaJJohV8rqs5r0ei4GN6Z4=",
+            "LoadWeight": 3,
+            "TopologyLayer": 2,
+            "EpochAPublicKey": "eSnbBPDRNVDD34ej0Ng03ABHlzfojvqbHGvTJaONsS4=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 112345
+        },
+        {
+            "Nickname": "five_eyes",
+            "ID": "5ZOUgjRyaKsadVeGpdjzsSpO/fUALPBU0mbWgP1BzsU=",
+            "LoadWeight": 3,
+            "TopologyLayer": 3,
+            "EpochAPublicKey": "qkzrqMkz6VTG2p7qeI8ce7HxSn/lcopxyfS33uLc9xI=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11236
+        },
+        {
+            "Nickname": "gchq123",
+            "ID": "R71B/DuJm6c/4EcROBgS/r0g7XB+JKB4x9az+Px6eTU=",
+            "LoadWeight": 3,
+            "TopologyLayer": 1,
+            "EpochAPublicKey": "Ra4KlDhgk/npa4wHLsyUENRv3Abn00Rh/dDrfl7COw4=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11237
+        },
+        {
+            "Nickname": "fsbspy1",
+            "ID": "tCTcg7Eu5UByPdQLBnQoNzoO/X3GU9ColAQtPna83js=",
+            "LoadWeight": 3,
+            "TopologyLayer": 2,
+            "EpochAPublicKey": "ylpKtxI3SOoVtFvui7bxyZdis88mUz/gMtjYZdMLMn8=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11238
+        },
+        {
+            "Nickname": "foxtrot2",
+            "ID": "kCpoAssntEb8YnzaLHZ7QtY2aHQw8LzO3vy3721peV0=",
+            "LoadWeight": 3,
+            "TopologyLayer": 3,
+            "EpochAPublicKey": "9U/MieDaVRPLWwCf0DsEa6thhDUJbxw4QfozB2Xc1gg=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11239
+        }
+    ],
+    "ProviderDescriptors": [
+        {
+            "Name": "acme.com",
+            "LongtermPublicKey": "4oedfJNxhUJ32DWt9KgVIM17O0GwXjs0H3U9qc9gbms=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11240
+        },
+        {
+            "Name": "nsa.gov",
+            "LongtermPublicKey": "z2oS4JxDXIODBxwCPiKhEjeRd9H1amksXJWg2XNFAyw=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11241
+        },
+        {
+            "Name": "gchq.uk",
+            "LongtermPublicKey": "SKVhdLj1Vuqbd6PhpS3Vq+hCe+ZjO+5BrnzgPgclmS0=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11242
+        },
+        {
+            "Name": "fsb.ru",
+            "LongtermPublicKey": "wKM+4wzRRi2QZJsFJhvuad77mhStpZA6vrKyFCFOJh8=",
+            "Ipv4Address": "127.0.0.1",
+            "TcpPort": 11243
+        }
+    ]
+}

@@ -1,0 +1,18 @@
+[
+    {
+        "Email": "alice@acme.com",
+        "Key": "7hQxTLrHpRtl6l4hhaG6z0q66D9ZGoW7Syel/amrpkE="
+    },
+    {
+        "Email": "bob@nsa.gov",
+        "Key": "wO1oukWYqFdWwlXMt463jq2Topb8amGZVNo6f1ZjiG8="
+    },
+    {
+        "Email": "eve@gchq.uk",
+        "Key": "Bcek+7tBcax6ObUUpRpbik5cAZmtD2CfA0u240E8CSo="
+    },
+    {
+        "Email": "malory@fsb.ru",
+        "Key": "Pj70Be9MV8xQxQUTW/CANWh/1K5lcOjUlk2aG7TWxwY="
+    }
+]

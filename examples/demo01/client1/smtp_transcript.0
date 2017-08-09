@@ -1,0 +1,30 @@
+ehlo sucka
+mail from:<alice@acme.com>
+rcpt to:<bob@nsa.gov>
+data
+From: John Doe <alice@acme.com>
+To: <bob@nsa.gov>
+X-Panoramix-Sender-Identity-Key: what
+SketchyHeaderField: 1.0
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+        boundary="XXXXboundary text"
+
+This is a multipart message in MIME format.
+
+--XXXXboundary text 
+Content-Type: text/plain
+
+this is the body text
+
+--XXXXboundary text 
+Content-Type: text/plain;
+Content-Disposition: attachment;
+        filename="test.txt"
+
+this is the attachment text
+
+--XXXXboundary text--
+
+.
+
