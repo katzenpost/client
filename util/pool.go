@@ -19,7 +19,11 @@ package util
 
 import (
 	"errors"
+	"fmt"
+	"net"
 
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
 )
 
@@ -34,12 +38,16 @@ func NewSessionPool() *SessionPool {
 	return &s
 }
 
-func FromAccounts(accounts []pki.Account, config *ClientDaemon) *SessionPool {
+func FromAccounts(accounts []Account, config *Config, keysDir, passphrase string, mixPKI pki.Client) (*SessionPool, error) {
 	pool := NewSessionPool()
+	providerAuthenticator, err := newProviderAuthenticator(config)
+	if err != nil {
+		return nil, err
+	}
 	for _, account := range accounts {
-		privateKey, err := c.config.GetAccountKey(account, config.keysDir, config.passphrase)
+		privateKey, err := config.GetAccountKey(account, keysDir, passphrase)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		sessionConfig := wire.SessionConfig{
 			Authenticator:     providerAuthenticator,
@@ -50,25 +58,25 @@ func FromAccounts(accounts []pki.Account, config *ClientDaemon) *SessionPool {
 		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
 		session, err := wire.NewSession(&sessionConfig, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		providerDesc, err := c.mixPKI.GetProviderDescriptor(account.Provider)
+		providerDesc, err := mixPKI.GetProviderDescriptor(account.Provider)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		log.Debugf("connecting to Provider %s on ip %s port %d", providerDesc.Name, providerDesc.Ipv4Address, providerDesc.TcpPort)
 		log.Debugf("pool %v email %v session %v", pool, email, session)
 		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", providerDesc.Ipv4Address, providerDesc.TcpPort))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		err = session.Initialize(conn)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pool.Add(email, session)
 	}
-
+	return pool, nil
 }
 
 func (s *SessionPool) Add(identity string, session *wire.Session) {

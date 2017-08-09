@@ -18,12 +18,8 @@
 package util
 
 import (
-	"fmt"
-	"net"
-
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
 )
@@ -63,14 +59,7 @@ func NewClientDaemon(config *Config, passphrase string, keysDirPath string, user
 // via POP3 and SMTP
 func (c *ClientDaemon) Start() error {
 	var smtpServer, pop3Server *server.Server
-
 	log.Debug("Client startup.")
-
-	providerAuthenticator, err := newProviderAuthenticator(c.config)
-	if err != nil {
-		return err
-	}
-
 	log.Debug("starting smtp proxy service")
 	smtpProxy := NewSubmitProxy(c.config, rand.Reader, c.userPKI)
 	if len(c.config.SMTPProxy.Network) == 0 {
@@ -78,7 +67,7 @@ func (c *ClientDaemon) Start() error {
 	} else {
 		smtpServer = server.New(c.config.SMTPProxy.Network, c.config.SMTPProxy.Address, smtpProxy.handleSMTPSubmission, nil)
 	}
-	err = smtpServer.Start()
+	err := smtpServer.Start()
 	if err != nil {
 		return err
 	}
@@ -91,7 +80,16 @@ func (c *ClientDaemon) Start() error {
 		pop3Server = server.New(c.config.POP3Proxy.Network, c.config.POP3Proxy.Address, pop3Proxy.handleConnection, nil)
 	}
 	err = pop3Server.Start()
-	return err
+	if err != nil {
+		return err
+	}
+
+	providerPool, err := FromAccounts(c.config.Account, c.config, c.keysDir, c.passphrase, c.mixPKI)
+	if err != nil {
+		return err
+	}
+	log.Debugf("provider pool %v", providerPool)
+	return nil
 }
 
 // Stop stops the client services
