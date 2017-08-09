@@ -133,6 +133,24 @@ func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 	return nil
 }
 
+func (c *Config) GetAccountKey(account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
+	privateKeyFile := CreateKeyFileName(keysDir, "wire", account.Name, account.Provider, "private")
+	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
+	v := vault.Vault{
+		Type:       "private",
+		Email:      email,
+		Passphrase: passphrase,
+		Path:       privateKeyFile,
+	}
+	plaintext, err := v.Open()
+	if err != nil {
+		return nil, err
+	}
+	key := ecdh.PrivateKey{}
+	key.FromBytes(plaintext)
+	return &key, nil
+}
+
 // GetProviderPins returns a mapping of
 // identity string to public key
 func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) {

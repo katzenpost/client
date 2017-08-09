@@ -18,8 +18,12 @@
 package util
 
 import (
+	"fmt"
+	"net"
+
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
 )
@@ -39,11 +43,11 @@ type ClientDaemon struct {
 	passphrase string
 	keysDir    string
 	userPKI    UserPKI
-	mixPKI     pki.Mix
+	mixPKI     pki.Client
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
-func NewClientDaemon(config *Config, passphrase string, keysDirPath string, userPKI UserPKI, mixPKI pki.Mix) (*ClientDaemon, error) {
+func NewClientDaemon(config *Config, passphrase string, keysDirPath string, userPKI UserPKI, mixPKI pki.Client) (*ClientDaemon, error) {
 	d := ClientDaemon{
 		config:     config,
 		passphrase: passphrase,
@@ -54,26 +58,32 @@ func NewClientDaemon(config *Config, passphrase string, keysDirPath string, user
 	return &d, nil
 }
 
-// Start starts the client services:
-// SMTP submission proxy
-// TODO:
-// Add POP3 retreival proxy
+// Start starts the client services
+// which proxy message to and from the mixnet
+// via POP3 and SMTP
 func (c *ClientDaemon) Start() error {
 	var smtpServer, pop3Server *server.Server
 
 	log.Debug("Client startup.")
 
+	providerAuthenticator, err := newProviderAuthenticator(c.config)
+	if err != nil {
+		return err
+	}
+
+	log.Debug("starting smtp proxy service")
 	smtpProxy := NewSubmitProxy(c.config, rand.Reader, c.userPKI)
 	if len(c.config.SMTPProxy.Network) == 0 {
 		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpProxy.handleSMTPSubmission, nil)
 	} else {
 		smtpServer = server.New(c.config.SMTPProxy.Network, c.config.SMTPProxy.Address, smtpProxy.handleSMTPSubmission, nil)
 	}
-	err := smtpServer.Start()
+	err = smtpServer.Start()
 	if err != nil {
 		return err
 	}
 
+	log.Debug("starting pop3 proxy service")
 	pop3Proxy := NewPop3Proxy()
 	if len(c.config.POP3Proxy.Network) == 0 {
 		pop3Server = server.New(DefaultPOP3Network, DefaultPOP3Address, pop3Proxy.handleConnection, nil)
