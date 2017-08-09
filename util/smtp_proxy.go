@@ -172,7 +172,7 @@ type SubmitProxy struct {
 	whitelist []string
 }
 
-// NewSubmitProxy
+// NewSubmitProxy creates a new SubmitProxy struct
 func NewSubmitProxy(config *Config, authenticator wire.PeerAuthenticator, randomReader io.Reader, userPki UserPKI, mixPki pki.Mix) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		config:        config,
