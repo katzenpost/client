@@ -27,6 +27,8 @@ import (
 const (
 	DefaultSMTPNetwork = "tcp"
 	DefaultSMTPAddress = "127.0.0.1:2525"
+	DefaultPOP3Network = "tcp"
+	DefaultPOP3Address = "127.0.0.1:1110"
 )
 
 var log = logging.MustGetLogger("mixclient")
@@ -59,22 +61,30 @@ func NewClientDaemon(config *Config, passphrase string, keysDirPath string, user
 func (c *ClientDaemon) Start() error {
 	log.Debug("Client startup.")
 
-	var smtpServer *server.Server
+	var smtpServer, pop3Server *server.Server
 	providerAuthenticator, err := newProviderAuthenticator(c.config)
 	if err != nil {
 		return err
 	}
 
 	smtpProxy := NewSubmitProxy(c.config, providerAuthenticator, rand.Reader, c.userPKI, c.mixPKI)
-
 	if len(c.config.SMTPProxy.Network) == 0 {
-		log.Debug("using default smtp proxy addr")
 		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpProxy.handleSMTPSubmission, nil)
 	} else {
-		log.Debug("not using default smtp proxy addr")
 		smtpServer = server.New(c.config.SMTPProxy.Network, c.config.SMTPProxy.Address, smtpProxy.handleSMTPSubmission, nil)
 	}
 	err = smtpServer.Start()
+	if err != nil {
+		return err
+	}
+
+	pop3Proxy := NewPop3Proxy()
+	if len(c.config.POP3Proxy.Network) == 0 {
+		pop3Server = server.New(DefaultPOP3Network, DefaultPOP3Address, pop3Proxy.handleConnection, nil)
+	} else {
+		pop3Server = server.New(c.config.POP3Proxy.Network, c.config.POP3Proxy.Address, pop3Proxy.handleConnection, nil)
+	}
+	err = pop3Server.Start()
 	return err
 }
 

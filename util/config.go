@@ -31,6 +31,33 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
+type Account struct {
+	Name     string
+	Provider string
+}
+
+type ProviderPinning struct {
+	PublicKeyFile string
+	Name          string
+}
+
+type SMTPProxy struct {
+	Address string
+	Network string
+}
+
+type POP3Proxy struct {
+	Address string
+	Network string
+}
+
+type Config struct {
+	Account         []Account
+	ProviderPinning []ProviderPinning
+	SMTPProxy       SMTPProxy
+	POP3Proxy       POP3Proxy
+}
+
 func CreateKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
 }
@@ -67,27 +94,6 @@ func splitEmail(email string) (string, string, error) {
 		return "", "", errors.New("splitEmail: email format invalid")
 	}
 	return fields[0], fields[1], nil
-}
-
-type Account struct {
-	Name     string
-	Provider string
-}
-
-type ProviderPinning struct {
-	PublicKeyFile string
-	Name          string
-}
-
-type SMTPProxy struct {
-	Address string
-	Network string
-}
-
-type Config struct {
-	Account         []Account
-	ProviderPinning []ProviderPinning
-	SMTPProxy       SMTPProxy
 }
 
 func FromFile(fileName string) (*Config, error) {
