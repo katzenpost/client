@@ -67,7 +67,7 @@ func (v *Vault) Open() ([]byte, error) {
 	}
 	block, _ := pem.Decode(pemPayload)
 	if block == nil {
-		return nil, err
+		return nil, errors.New("failed to decode pem file")
 	}
 	if len(block.Headers) == 0 {
 		return nil, errors.New("PEM Header does not contain e-mail address.")
