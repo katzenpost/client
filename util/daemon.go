@@ -35,21 +35,17 @@ var log = logging.MustGetLogger("mixclient")
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	config     *Config
-	passphrase string
-	keysDir    string
-	userPKI    UserPKI
-	mixPKI     pki.Client
+	config  *Config
+	userPKI UserPKI
+	mixPKI  pki.Client
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
-func NewClientDaemon(config *Config, passphrase string, keysDirPath string, userPKI UserPKI, mixPKI pki.Client) (*ClientDaemon, error) {
+func NewClientDaemon(config *Config, pool *SessionPool, userPKI UserPKI, mixPKI pki.Client) (*ClientDaemon, error) {
 	d := ClientDaemon{
-		config:     config,
-		passphrase: passphrase,
-		keysDir:    keysDirPath,
-		userPKI:    userPKI,
-		mixPKI:     mixPKI,
+		config:  config,
+		userPKI: userPKI,
+		mixPKI:  mixPKI,
 	}
 	return &d, nil
 }
@@ -84,11 +80,6 @@ func (c *ClientDaemon) Start() error {
 		return err
 	}
 
-	providerPool, err := FromAccounts(c.config.Account, c.config, c.keysDir, c.passphrase, c.mixPKI)
-	if err != nil {
-		return err
-	}
-	log.Debugf("provider pool %v", providerPool)
 	return nil
 }
 

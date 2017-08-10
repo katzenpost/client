@@ -38,13 +38,13 @@ func NewSessionPool() *SessionPool {
 	return &s
 }
 
-func FromAccounts(accounts []Account, config *Config, keysDir, passphrase string, mixPKI pki.Client) (*SessionPool, error) {
+func PoolFromAccounts(config *Config, keysDir, passphrase string, mixPKI pki.Client) (*SessionPool, error) {
 	pool := NewSessionPool()
 	providerAuthenticator, err := newProviderAuthenticator(config)
 	if err != nil {
 		return nil, err
 	}
-	for _, account := range accounts {
+	for _, account := range config.Account {
 		privateKey, err := config.GetAccountKey(account, keysDir, passphrase)
 		if err != nil {
 			return nil, err
