@@ -159,15 +159,19 @@ type SubmitProxy struct {
 	// userPKI implements the UserPKI interface
 	userPKI UserPKI
 
+	// session pool of connections to each provider
+	sessionPool *SessionPool
+
 	whitelist []string
 }
 
 // NewSubmitProxy creates a new SubmitProxy struct
-func NewSubmitProxy(config *Config, randomReader io.Reader, userPki UserPKI) *SubmitProxy {
+func NewSubmitProxy(config *Config, randomReader io.Reader, userPki UserPKI, pool *SessionPool) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		config:       config,
 		randomReader: randomReader,
 		userPKI:      userPki,
+		sessionPool:  pool,
 		whitelist: []string{ // XXX yawning fix me
 			"To",
 			"From",
@@ -189,6 +193,11 @@ func NewSubmitProxy(config *Config, randomReader io.Reader, userPki UserPKI) *Su
 func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
 	log.Debugf("sendMessage no-op function: sender %s receiver %s", sender, receiver)
 	log.Debugf("message:\n%s\n", string(message))
+	cmd := commands.SendPacket{} // XXX compose a sphinx packet...
+	err := p.sessionPool[sender].SendCommand(cmd)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

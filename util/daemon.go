@@ -35,17 +35,19 @@ var log = logging.MustGetLogger("mixclient")
 
 // ClientDaemon handles the startup and shutdown of all client services
 type ClientDaemon struct {
-	config  *Config
-	userPKI UserPKI
-	mixPKI  pki.Client
+	config      *Config
+	userPKI     UserPKI
+	mixPKI      pki.Client
+	sessionPool *SessionPool
 }
 
 // NewClientDaemon creates a new ClientDaemon given a Config
 func NewClientDaemon(config *Config, pool *SessionPool, userPKI UserPKI, mixPKI pki.Client) (*ClientDaemon, error) {
 	d := ClientDaemon{
-		config:  config,
-		userPKI: userPKI,
-		mixPKI:  mixPKI,
+		config:      config,
+		userPKI:     userPKI,
+		mixPKI:      mixPKI,
+		sessionPool: pool,
 	}
 	return &d, nil
 }
@@ -57,7 +59,7 @@ func (c *ClientDaemon) Start() error {
 	var smtpServer, pop3Server *server.Server
 	log.Debug("Client startup.")
 	log.Debug("starting smtp proxy service")
-	smtpProxy := NewSubmitProxy(c.config, rand.Reader, c.userPKI)
+	smtpProxy := NewSubmitProxy(c.config, rand.Reader, c.userPKI, c.sessionPool)
 	if len(c.config.SMTPProxy.Network) == 0 {
 		smtpServer = server.New(DefaultSMTPNetwork, DefaultSMTPAddress, smtpProxy.handleSMTPSubmission, nil)
 	} else {
