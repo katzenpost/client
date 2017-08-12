@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package util provides client utilities
-package util
+// Package proxy provides mixnet client proxies
+package proxy
 
 import (
 	"bytes"
@@ -25,10 +25,15 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/session_pool"
+	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
+
+var log = logging.MustGetLogger("mixclient")
 
 // logWriter is used to present the io.Reader interface
 // to our SMTP library for logging. this is only required
@@ -150,7 +155,7 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 // If the client stops operating before receiving the corresponding ACK message,
 // the client will later be able to retreive messages from disk and retransmit them.
 type SubmitProxy struct {
-	config *Config
+	config *config.Config
 
 	// randomReader is an implementation of the io.Reader interface
 	// which is used to generate ephemeral keys for our wire protocol's
@@ -158,16 +163,16 @@ type SubmitProxy struct {
 	randomReader io.Reader
 
 	// userPKI implements the UserPKI interface
-	userPKI UserPKI
+	userPKI user_pki.UserPKI
 
 	// session pool of connections to each provider
-	sessionPool *SessionPool
+	sessionPool *session_pool.SessionPool
 
 	whitelist []string
 }
 
 // NewSubmitProxy creates a new SubmitProxy struct
-func NewSubmitProxy(config *Config, randomReader io.Reader, userPki UserPKI, pool *SessionPool) *SubmitProxy {
+func NewSubmitProxy(config *config.Config, randomReader io.Reader, userPki user_pki.UserPKI, pool *session_pool.SessionPool) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		config:       config,
 		randomReader: randomReader,

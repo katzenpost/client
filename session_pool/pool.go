@@ -14,18 +14,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package util provides client utilities
-package util
+// Package provides wire protocol session pool API
+package session_pool
 
 import (
 	"errors"
 	"fmt"
 	"net"
 
+	"github.com/katzenpost/client/auth"
+	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("mixclient")
 
 type SessionPool struct {
 	sessions map[string]*wire.Session
@@ -38,9 +43,9 @@ func NewSessionPool() *SessionPool {
 	return &s
 }
 
-func PoolFromAccounts(config *Config, keysDir, passphrase string, mixPKI pki.Client) (*SessionPool, error) {
+func PoolFromAccounts(config *config.Config, keysDir, passphrase string, mixPKI pki.Client) (*SessionPool, error) {
 	pool := NewSessionPool()
-	providerAuthenticator, err := newProviderAuthenticator(config)
+	providerAuthenticator, err := auth.NewProviderAuthenticator(config)
 	if err != nil {
 		return nil, err
 	}

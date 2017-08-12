@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package util provides client utilities
-package util
+// Package user_pki provides client end to end user identity PKI
+package user_pki
 
 import (
 	"encoding/base64"

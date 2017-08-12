@@ -14,27 +14,28 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package util provides client utilities
-package util
+// Package provides mixnet Provider authentication
+package auth
 
 import (
 	"crypto/subtle"
 
+	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/wire"
 )
 
-type providerAuthenticator struct {
-	config  *Config
+type ProviderAuthenticator struct {
+	config  *config.Config
 	keysMap map[[255]byte]*ecdh.PublicKey
 }
 
-func newProviderAuthenticator(config *Config) (*providerAuthenticator, error) {
+func NewProviderAuthenticator(config *config.Config) (*ProviderAuthenticator, error) {
 	keysMap, err := config.GetProviderPinnedKeys()
 	if err != nil {
 		return nil, err
 	}
-	authenticator := providerAuthenticator{
+	authenticator := ProviderAuthenticator{
 		keysMap: keysMap,
 	}
 	return &authenticator, nil
@@ -42,7 +43,7 @@ func newProviderAuthenticator(config *Config) (*providerAuthenticator, error) {
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
-func (a *providerAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
+func (a *ProviderAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
 	nameField := [255]byte{}
 	copy(nameField[:], peer.AdditionalData)
 	_, ok := a.keysMap[nameField]

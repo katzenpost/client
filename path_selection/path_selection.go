@@ -91,16 +91,23 @@ func NewRouteFactory(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
 // getRouteDescriptors returns a slice of mix descriptors,
 // one for each hop in the route where each mix descriptor
 // was selected from the set of descriptors for that layer
-func (r *RouteFactory) getRouteDescriptors(senderProviderID, recipientProviderID [constants.NodeIDLength]byte) []*pki.MixDescriptor {
+func (r *RouteFactory) getRouteDescriptors(senderProviderID, recipientProviderID [constants.NodeIDLength]byte) ([]*pki.MixDescriptor, error) {
+	var err error
 	descriptors := make([]*pki.MixDescriptor, r.nrHops)
-	descriptors[0] = r.pki.GetDescriptor(senderProviderID)
-	descriptors[r.nrHops-1] = r.pki.GetDescriptor(recipientProviderID)
+	descriptors[0], err = r.pki.GetDescriptor(senderProviderID)
+	if err != nil {
+		return nil, err
+	}
+	descriptors[r.nrHops-1], err = r.pki.GetDescriptor(recipientProviderID)
+	if err != nil {
+		return nil, err
+	}
 	for i := 0; i < r.nrHops; i++ {
 		layerMixes := r.pki.GetMixesInLayer(i)
 		c := mathrand.Intn(len(layerMixes))
 		descriptors[i] = layerMixes[c]
 	}
-	return descriptors
+	return descriptors, nil
 }
 
 // getHopEpochKeys is a helper function which ultimately selects
@@ -213,16 +220,22 @@ func (r *RouteFactory) next(senderProviderID,
 		return nil, nil, nil, errors.New("selected delays exceed permitted epochtime range")
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
-	forwardDescriptors := r.getRouteDescriptors(senderProviderID, recipientProviderID)
-	replyDescriptors := r.getRouteDescriptors(recipientProviderID, senderProviderID)
-	// 4. Ensure that the forward and SURB mixes have a published key that
-	//    will allow them to decrypt the packet at the time of it's expected
-	//    arrival.
-	forwardPath, _, err := r.newPathVector(till, forwardDelays, forwardDescriptors, false)
+	forwardDescriptors, err := r.getRouteDescriptors(senderProviderID, recipientProviderID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	replyPath, surbID, err := r.newPathVector(till, replyDelays, replyDescriptors, true)
+	replyDescriptors, err := r.getRouteDescriptors(recipientProviderID, senderProviderID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// 4. Ensure that the forward and SURB mixes have a published key that
+	//    will allow them to decrypt the packet at the time of it's expected
+	//    arrival.
+	forwardPath, _, err := r.newPathVector(till, forwardDelays, forwardDescriptors, recipientID, false)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	replyPath, surbID, err := r.newPathVector(till, replyDelays, replyDescriptors, recipientID, true)
 	if err != nil {
 		return nil, nil, nil, err
 	}

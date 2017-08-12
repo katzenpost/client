@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package util provides client utilities
-package util
+// Package provides mixnet client configuration utilities
+package config
 
 import (
 	"encoding/pem"
@@ -28,8 +28,11 @@ import (
 	"github.com/katzenpost/client/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/op/go-logging"
 	"github.com/pelletier/go-toml"
 )
+
+var log = logging.MustGetLogger("mixclient")
 
 type Account struct {
 	Name     string
