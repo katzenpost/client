@@ -34,7 +34,7 @@ import (
 
 // durationFromFloat returns millisecond time.Duration given a float64
 func durationFromFloat(delay float64) (time.Duration, error) {
-	d, err := time.ParseDuration(fmt.Sprintf("%sms", delay))
+	d, err := time.ParseDuration(fmt.Sprintf("%fms", delay))
 	return d, err
 }
 
@@ -48,10 +48,10 @@ func durationFromFloat(delay float64) (time.Duration, error) {
 func getDelays(lambda float64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
-	for i := 0; i < count-1; i++ {
+	for i := 0; i < count-2; i++ {
 		delays[i] = rand.Exp(cryptRand, lambda)
 	}
-	delays[count] = float64(0)
+	delays[count-1] = float64(0)
 	return delays
 }
 
@@ -79,7 +79,7 @@ type RouteFactory struct {
 }
 
 // NewRouteFactory creates a new RouteFactory for creating routes
-func NewRouteFactory(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
+func New(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
 	r := RouteFactory{
 		pki:    pki,
 		nrHops: nrHops,
@@ -91,19 +91,23 @@ func NewRouteFactory(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
 // getRouteDescriptors returns a slice of mix descriptors,
 // one for each hop in the route where each mix descriptor
 // was selected from the set of descriptors for that layer
-func (r *RouteFactory) getRouteDescriptors(senderProviderID, recipientProviderID [constants.NodeIDLength]byte) ([]*pki.MixDescriptor, error) {
+func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProviderName string) ([]*pki.MixDescriptor, error) {
 	var err error
 	descriptors := make([]*pki.MixDescriptor, r.nrHops)
-	descriptors[0], err = r.pki.GetDescriptor(senderProviderID)
+	descriptors[0], err = r.pki.GetProviderDescriptor(senderProviderName)
 	if err != nil {
 		return nil, err
 	}
-	descriptors[r.nrHops-1], err = r.pki.GetDescriptor(recipientProviderID)
+	descriptors[r.nrHops-1], err = r.pki.GetProviderDescriptor(recipientProviderName)
 	if err != nil {
 		return nil, err
 	}
 	for i := 0; i < r.nrHops; i++ {
-		layerMixes := r.pki.GetMixesInLayer(i)
+		layerMixes := r.pki.GetMixesInLayer(uint8(i))
+		fmt.Printf("layer %d\n", i)
+		if len(layerMixes) == 0 {
+			panic("WTF")
+		}
 		c := mathrand.Intn(len(layerMixes))
 		descriptors[i] = layerMixes[c]
 	}
@@ -197,8 +201,8 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // The generated forward and reply paths are intended to be used
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix network using the Poisson mix strategy.
-func (r *RouteFactory) next(senderProviderID,
-	recipientProviderID [constants.NodeIDLength]byte,
+func (r *RouteFactory) next(senderProviderName,
+	recipientProviderName string,
 	recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
 
 	// 1. Sample all forward and SURB delays.
@@ -220,11 +224,11 @@ func (r *RouteFactory) next(senderProviderID,
 		return nil, nil, nil, errors.New("selected delays exceed permitted epochtime range")
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
-	forwardDescriptors, err := r.getRouteDescriptors(senderProviderID, recipientProviderID)
+	forwardDescriptors, err := r.getRouteDescriptors(senderProviderName, recipientProviderName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	replyDescriptors, err := r.getRouteDescriptors(recipientProviderID, senderProviderID)
+	replyDescriptors, err := r.getRouteDescriptors(recipientProviderName, senderProviderName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -238,6 +242,27 @@ func (r *RouteFactory) next(senderProviderID,
 	replyPath, surbID, err := r.newPathVector(till, replyDelays, replyDescriptors, recipientID, true)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	return forwardPath, replyPath, surbID, nil
+}
+
+func (r *RouteFactory) Build(senderProviderName,
+	recipientProviderName string,
+	recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+
+	var err error = nil
+	var forwardPath []*sphinx.PathHop
+	var replyPath []*sphinx.PathHop
+	var surbID *[constants.SURBIDLength]byte
+
+	for i := 0; i < 4; i++ {
+		forwardPath, replyPath, surbID, err = r.next(senderProviderName, recipientProviderName, recipientID)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("RouteFactory.Build failed: %s", err)
 	}
 	return forwardPath, replyPath, surbID, nil
 }

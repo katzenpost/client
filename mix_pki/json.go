@@ -93,12 +93,20 @@ func (j *JsonMixDescriptor) MixDescriptor() (*pki.MixDescriptor, error) {
 }
 
 type StaticPKI struct {
-	mixMap      map[[constants.NodeIDLength]byte]*pki.MixDescriptor
-	providerMap map[string]*pki.MixDescriptor
+	MixMap      map[[constants.NodeIDLength]byte]*pki.MixDescriptor
+	ProviderMap map[string]*pki.MixDescriptor
+}
+
+func NewStaticPKI() *StaticPKI {
+	staticPKI := StaticPKI{
+		MixMap:      make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor),
+		ProviderMap: make(map[string]*pki.MixDescriptor),
+	}
+	return &staticPKI
 }
 
 func (t *StaticPKI) GetDescriptor(id [constants.NodeIDLength]byte) (*pki.MixDescriptor, error) {
-	mix, ok := t.mixMap[id]
+	mix, ok := t.MixMap[id]
 	if ok {
 		return mix, nil
 	}
@@ -107,7 +115,7 @@ func (t *StaticPKI) GetDescriptor(id [constants.NodeIDLength]byte) (*pki.MixDesc
 
 func (t *StaticPKI) GetMixesInLayer(layer uint8) []*pki.MixDescriptor {
 	l := []*pki.MixDescriptor{}
-	for _, v := range t.mixMap {
+	for _, v := range t.MixMap {
 		if v.TopologyLayer == layer {
 			l = append(l, v)
 		}
@@ -116,12 +124,12 @@ func (t *StaticPKI) GetMixesInLayer(layer uint8) []*pki.MixDescriptor {
 }
 
 func (t *StaticPKI) GetLatestConsensusMap() *map[[constants.NodeIDLength]byte]*pki.MixDescriptor {
-	return &t.mixMap
+	return &t.MixMap
 }
 
 func (t *StaticPKI) GetProviderDescriptor(name string) (*pki.MixDescriptor, error) {
 	log.Debugf("GET PROVIDER DESCRIPTOR: %s", name)
-	v, ok := t.providerMap[strings.ToLower(name)]
+	v, ok := t.ProviderMap[strings.ToLower(name)]
 	if !ok {
 		return nil, fmt.Errorf("provider descriptor name not found: %s", name)
 	}
@@ -138,8 +146,8 @@ func StaticPKIFromFile(filePath string) (*StaticPKI, error) {
 	if err != nil {
 		return nil, err
 	}
-	providerMap := make(map[string]*pki.MixDescriptor)
-	mixMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	ProviderMap := make(map[string]*pki.MixDescriptor)
+	MixMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
 
 	for _, mixDesc := range jsonPKI.MixDescriptors {
 		idBytes, err := base64.StdEncoding.DecodeString(mixDesc.ID)
@@ -149,17 +157,17 @@ func StaticPKIFromFile(filePath string) (*StaticPKI, error) {
 		var id [constants.NodeIDLength]byte
 		copy(id[:], idBytes)
 		if mixDesc.IsProvider {
-			providerMap[mixDesc.Name], err = mixDesc.MixDescriptor()
+			ProviderMap[mixDesc.Name], err = mixDesc.MixDescriptor()
 		} else {
-			mixMap[id], err = mixDesc.MixDescriptor()
+			MixMap[id], err = mixDesc.MixDescriptor()
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	staticPKI := StaticPKI{
-		mixMap:      mixMap,
-		providerMap: providerMap,
+		MixMap:      MixMap,
+		ProviderMap: ProviderMap,
 	}
 	return &staticPKI, nil
 }
