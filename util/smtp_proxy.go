@@ -25,6 +25,7 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/katzenpost/core/wire/commands"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
@@ -194,7 +195,11 @@ func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error
 	log.Debugf("sendMessage no-op function: sender %s receiver %s", sender, receiver)
 	log.Debugf("message:\n%s\n", string(message))
 	cmd := commands.SendPacket{} // XXX compose a sphinx packet...
-	err := p.sessionPool[sender].SendCommand(cmd)
+	session, err := p.sessionPool.Get(sender)
+	if err != nil {
+		return err
+	}
+	err = session.SendCommand(cmd)
 	if err != nil {
 		return err
 	}
