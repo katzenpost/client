@@ -73,7 +73,7 @@ type RouteFactory struct {
 func NewRouteFactory(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
 	r := RouteFactory{
 		pki:    pki,
-		nrHops: nsHops,
+		nrHops: nrHops,
 		lambda: lambda,
 	}
 	return &r
@@ -169,11 +169,15 @@ func (r *RouteFactory) Next() ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants
 	//    2 * epoch_duration, as keys are only published 3 epochs in
 	//    advance.
 	_, _, till := epochtime.Now()
-	mixDelays, err := time.ParseDuration(fmt.Sprintf("%ss", sum(forwardDelays)+sum(replyDelays)))
+	forwardDuration, err := durationFromFloat(sum(forwardDelays))
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if mixDelays > till+(2*epochtime.Period) {
+	replyDuration, err := durationFromFloat(sum(replyDelays))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if forwardDuration+replyDuration > till+(2*epochtime.Period) {
 		return nil, nil, nil, errors.New("selected delays exceed permitted epochtime range")
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
