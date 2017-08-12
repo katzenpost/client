@@ -40,13 +40,18 @@ func durationFromFloat(delay float64) (time.Duration, error) {
 
 // getDelays returns a list of delays from
 // the Poisson distribution with a given
-// lambda argument
+// lambda argument. As per section
+// "5.1 Choosing Delays: for single Block messages and for multi Block messages"
+// of the "Panoramix Mix Network End-to-end Protocol Specification"
+// the delay for the egress provider, the last hop is always zero,
+// see https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
 func getDelays(lambda float64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
-	for i := 0; i < count; i++ {
+	for i := 0; i < count-1; i++ {
 		delays[i] = rand.Exp(cryptRand, lambda)
 	}
+	delays[count] = float64(0)
 	return delays
 }
 
@@ -62,7 +67,11 @@ func sum(input []float64) float64 {
 }
 
 // RouteFactory builds routes and by doing so handles all the
-// details of path selection and mix PKI interaction
+// details of path selection and mix PKI interaction. This factory
+// is used to create routes for a mix network which uses the
+// Poisson mix strategy, where the client selects a delay for each
+// hop in the route where the mean of this distribution is tuneable
+// using the lambda parameter.
 type RouteFactory struct {
 	pki    pki.Client
 	nrHops int
@@ -82,8 +91,10 @@ func NewRouteFactory(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
 // getRouteDescriptors returns a slice of mix descriptors,
 // one for each hop in the route where each mix descriptor
 // was selected from the set of descriptors for that layer
-func (r *RouteFactory) getRouteDescriptors() []*pki.MixDescriptor {
+func (r *RouteFactory) getRouteDescriptors(senderProviderID, recipientProviderID [constants.NodeIDLength]byte) []*pki.MixDescriptor {
 	descriptors := make([]*pki.MixDescriptor, r.nrHops)
+	descriptors[0] = r.pki.GetDescriptor(senderProviderID)
+	descriptors[r.nrHops-1] = r.pki.GetDescriptor(recipientProviderID)
 	for i := 0; i < r.nrHops; i++ {
 		layerMixes := r.pki.GetMixesInLayer(i)
 		c := mathrand.Intn(len(layerMixes))
@@ -92,8 +103,15 @@ func (r *RouteFactory) getRouteDescriptors() []*pki.MixDescriptor {
 	return descriptors
 }
 
-// getHopEpochKeys returns a list of keys for each hop, given a list
-// of delays and mix descriptors
+// getHopEpochKeys is a helper function which ultimately selects
+// appropriate mix routing keys for each hop in the route. This function is
+// given a 'till' argument which specifies the mount of time until the
+// next Key Rotation Epoch. The 'delays' argument specifies the delay for
+// each hop in the route and the 'descriptors' is a list of MixDescriptor
+// for each hop. For detailed information about the mix key rotation
+// schedule, refer to section "4.2 Sphinx Mix and Provider Key Rotation"
+// of the "Panoramix Mix Network Specification"
+// https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt
 func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, descriptors []*pki.MixDescriptor) ([]*ecdh.PublicKey, error) {
 	hopDelay := delays[0]
 	keys := make([]*ecdh.PublicKey, r.nrHops)
@@ -117,8 +135,17 @@ func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, des
 }
 
 // newPathVector returns a slice of PathHops and optionally a new SURB ID
-// if the isSURB argument is set to true
-func (r *RouteFactory) newPathVector(till time.Duration, delays []float64, descriptors []*pki.MixDescriptor, isSURB bool) ([]*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+// if the isSURB argument is set to true.
+// The PathHop struct has three attributes: ID, PublicKey and Commands.
+// The ID and PublicKey are found in the mix descriptors while the
+// Commands are specified by this function. The recipientID is only
+// used to create forward paths, when isSURB is set to false.
+func (r *RouteFactory) newPathVector(till time.Duration,
+	delays []float64,
+	descriptors []*pki.MixDescriptor,
+	recipientID *[constants.RecipientIDLength]byte,
+	isSURB bool) ([]*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+
 	path := make([]*sphinx.PathHop, r.nrHops)
 	var surbID *[constants.SURBIDLength]byte = nil
 	keys, err := r.getHopEpochKeys(till, delays, descriptors)
@@ -135,13 +162,6 @@ func (r *RouteFactory) newPathVector(till time.Duration, delays []float64, descr
 			delay.Delay = uint32(delays[i])
 			path[i].Commands = append(path[i].Commands, delay)
 		} else {
-			// Terminal hop, add the recipient.
-			recipient := new(commands.Recipient)
-			_, err := rand.Reader.Read(recipient.ID[:])
-			if err != nil {
-				return nil, nil, err
-			}
-			path[i].Commands = append(path[i].Commands, recipient)
 			if isSURB {
 				surbReply := new(commands.SURBReply)
 				id := [constants.SURBIDLength]byte{}
@@ -152,16 +172,28 @@ func (r *RouteFactory) newPathVector(till time.Duration, delays []float64, descr
 				}
 				surbReply.ID = *surbID
 				path[i].Commands = append(path[i].Commands, surbReply)
+			} else {
+				// Terminal hop, add the recipient.
+				recipient := new(commands.Recipient)
+				copy(recipient.ID[:], recipientID[:])
+				path[i].Commands = append(path[i].Commands, recipient)
 			}
 		}
 	}
 	return path, surbID, nil
 }
 
-// Next implements section 5.2 Path selection algorithm of the
+// next returns a new forward path, reply path, SURB_ID and error.
+// This implements section 5.2 Path selection algorithm of the
 // Panoramix Mix Network End-to-end Protocol Specification
 // see https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
-func (r *RouteFactory) Next() ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+// The generated forward and reply paths are intended to be used
+// with the Poisson Stop and Wait ARQ, an end to end reliable transmission
+// protocol for mix network using the Poisson mix strategy.
+func (r *RouteFactory) next(senderProviderID,
+	recipientProviderID [constants.NodeIDLength]byte,
+	recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+
 	// 1. Sample all forward and SURB delays.
 	forwardDelays := getDelays(r.lambda, r.nrHops)
 	replyDelays := getDelays(r.lambda, r.nrHops)
@@ -181,8 +213,8 @@ func (r *RouteFactory) Next() ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants
 		return nil, nil, nil, errors.New("selected delays exceed permitted epochtime range")
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
-	forwardDescriptors := r.getRouteDescriptors()
-	replyDescriptors := r.getRouteDescriptors()
+	forwardDescriptors := r.getRouteDescriptors(senderProviderID, recipientProviderID)
+	replyDescriptors := r.getRouteDescriptors(recipientProviderID, senderProviderID)
 	// 4. Ensure that the forward and SURB mixes have a published key that
 	//    will allow them to decrypt the packet at the time of it's expected
 	//    arrival.
