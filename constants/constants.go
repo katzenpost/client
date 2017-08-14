@@ -20,4 +20,16 @@ package constants
 const (
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
+
+	// DefaultSMTPNetwork is the default network type used for our SMTP proxy service
+	DefaultSMTPNetwork = "tcp"
+
+	// DefaultSMTPAddress is the default address used for our SMTP proxy service
+	DefaultSMTPAddress = "127.0.0.1:2525"
+
+	// DefaultPOP3Network is the default network type used for our POP3 proxy service
+	DefaultPOP3Network = "tcp"
+
+	// DefaultPOP3Address is the default address type used for our POP3 proxy service
+	DefaultPOP3Address = "127.0.0.1:1110"
 )

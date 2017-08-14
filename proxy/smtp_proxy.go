@@ -19,15 +19,23 @@ package proxy
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/mail"
 	"strings"
 
+	"github.com/katzenpost/client/block"
 	"github.com/katzenpost/client/config"
+	clientconstants "github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/user_pki"
+	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/sphinx"
+	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
@@ -155,7 +163,7 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 // If the client stops operating before receiving the corresponding ACK message,
 // the client will later be able to retreive messages from disk and retransmit them.
 type SubmitProxy struct {
-	config *config.Config
+	accounts *config.Accounts
 
 	// randomReader is an implementation of the io.Reader interface
 	// which is used to generate ephemeral keys for our wire protocol's
@@ -168,13 +176,16 @@ type SubmitProxy struct {
 	// session pool of connections to each provider
 	sessionPool *session_pool.SessionPool
 
+	routeFactory *path_selection.RouteFactory
+
 	whitelist []string
 }
 
 // NewSubmitProxy creates a new SubmitProxy struct
-func NewSubmitProxy(config *config.Config, randomReader io.Reader, userPki user_pki.UserPKI, pool *session_pool.SessionPool) *SubmitProxy {
+func NewSubmitProxy(routeFactory *path_selection.RouteFactory, accounts *config.Accounts, randomReader io.Reader, userPki user_pki.UserPKI, pool *session_pool.SessionPool) *SubmitProxy {
 	submissionProxy := SubmitProxy{
-		config:       config,
+		routeFactory: routeFactory,
+		accounts:     accounts,
 		randomReader: randomReader,
 		userPKI:      userPki,
 		sessionPool:  pool,
@@ -189,6 +200,28 @@ func NewSubmitProxy(config *config.Config, randomReader io.Reader, userPki user_
 	return &submissionProxy
 }
 
+// fragmentMessage fragments a message into a slice of blocks
+func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
+	blocks := []*block.Block{}
+	if len(message) <= constants.ForwardPayloadLength {
+		id := [clientconstants.MessageIDLength]byte{}
+		_, err := rand.Reader.Read(id[:])
+		if err != nil {
+			return nil, err
+		}
+		block := block.Block{
+			MessageID:   id,
+			TotalBlocks: 1,
+			BlockID:     0,
+			Block:       message,
+		}
+		blocks = append(blocks, &block)
+	} else {
+		return nil, errors.New("error: fragmentation not yet implemented")
+	}
+	return blocks, nil
+}
+
 // sendMessage sends a message to a given receiver identity
 //
 // The sender e-mail address is used to select the client's end to end cryptographic
@@ -199,21 +232,59 @@ func NewSubmitProxy(config *config.Config, randomReader io.Reader, userPki user_
 func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
 	log.Debugf("sendMessage no-op function: sender %s receiver %s", sender, receiver)
 	log.Debugf("message:\n%s\n", string(message))
-	cmd := commands.SendPacket{} // XXX compose a sphinx packet...
-	session, err := p.sessionPool.Get(sender)
+
+	blocks, err := p.fragmentMessage(message)
 	if err != nil {
 		return err
 	}
-	err = session.SendCommand(cmd)
+	senderKey, err := p.accounts.GetIdentityKey(sender)
 	if err != nil {
 		return err
+	}
+	receiverKey, err := p.userPKI.GetKey(receiver)
+	if err != nil {
+		return err
+	}
+	handler := block.NewHandler(senderKey, rand.Reader)
+	for _, block := range blocks {
+		blockCiphertext := handler.Encrypt(receiverKey, block)
+		_, senderProvider, err := config.SplitEmail(sender)
+		if err != nil {
+			return err
+		}
+		recipientUser, recipientProvider, err := config.SplitEmail(receiver)
+		if err != nil {
+			return err
+		}
+		recipientID := [sphinxconstants.RecipientIDLength]byte{}
+		copy(recipientID[:], recipientUser)
+		// XXX todo: use the replyPath to compose the SURB-ACK
+		forwardPath, _, _, err := p.routeFactory.Build(senderProvider, recipientProvider, &recipientID)
+		if err != nil {
+			return err
+		}
+		sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, blockCiphertext)
+		if err != nil {
+			return err
+		}
+		cmd := commands.SendPacket{
+			SphinxPacket: sphinxPacket,
+		}
+		session, err := p.sessionPool.Get(sender)
+		if err != nil {
+			return err
+		}
+		err = session.SendCommand(cmd)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // handleSMTPSubmission handles the SMTP submissions
 // and proxies them to the mix network.
-func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
+func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
@@ -232,7 +303,7 @@ func (p *SubmitProxy) handleSMTPSubmission(conn net.Conn) error {
 				return err
 			}
 			sender = senderAddr.Address
-			if !p.config.HasIdentity(sender) {
+			if !p.accounts.HasIdentity(sender) {
 				log.Debug("client identity not found")
 				smtpConn.Reject()
 				return nil

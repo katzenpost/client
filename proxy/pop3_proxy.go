@@ -93,7 +93,7 @@ func NewPop3Proxy() *Pop3Proxy {
 	return &p
 }
 
-func (p *Pop3Proxy) handleConnection(conn net.Conn) error {
+func (p *Pop3Proxy) HandleConnection(conn net.Conn) error {
 	defer conn.Close()
 	backend := Pop3Backend{}
 	pop3Session := pop3.NewSession(conn, backend)

@@ -50,7 +50,7 @@ func PoolFromAccounts(config *config.Config, keysDir, passphrase string, mixPKI 
 		return nil, err
 	}
 	for _, account := range config.Account {
-		privateKey, err := config.GetAccountKey(account, keysDir, passphrase)
+		privateKey, err := config.GetAccountKey("wire", account, keysDir, passphrase)
 		if err != nil {
 			return nil, err
 		}
@@ -69,8 +69,11 @@ func PoolFromAccounts(config *config.Config, keysDir, passphrase string, mixPKI 
 		if err != nil {
 			return nil, err
 		}
+
 		log.Debugf("connecting to Provider %s on ip %s port %d", providerDesc.Name, providerDesc.Ipv4Address, providerDesc.TcpPort)
 		log.Debugf("pool %v email %v session %v", pool, email, session)
+
+		// XXX hard code "tcp" here?
 		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", providerDesc.Ipv4Address, providerDesc.TcpPort))
 		if err != nil {
 			return nil, err

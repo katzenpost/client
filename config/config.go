@@ -61,6 +61,10 @@ type Config struct {
 	POP3Proxy       POP3Proxy
 }
 
+type Accounts struct {
+	keys map[string]*ecdh.PrivateKey
+}
+
 func CreateKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
 }
@@ -91,7 +95,7 @@ func writeKey(keysDir, prefix, name, provider, passphrase string) error {
 	}
 }
 
-func splitEmail(email string) (string, string, error) {
+func SplitEmail(email string) (string, string, error) {
 	fields := strings.Split(email, "@")
 	if len(fields) != 2 {
 		return "", "", errors.New("splitEmail: email format invalid")
@@ -110,6 +114,36 @@ func FromFile(fileName string) (*Config, error) {
 		return nil, err
 	}
 	return &config, nil
+}
+
+// Accounts returns an Accounts struct which contains
+// a map of email to private key for each account
+func (c *Config) Accounts(keysDir, passphrase string) (*Accounts, error) {
+	accounts := Accounts{
+		keys: make(map[string]*ecdh.PrivateKey),
+	}
+	for _, account := range c.Account {
+		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
+		privateKey, err := c.GetAccountKey("e2e", account, keysDir, passphrase)
+		if err != nil {
+			return nil, err
+		}
+		accounts.keys[email] = privateKey
+	}
+	return &accounts, nil
+}
+
+func (a *Accounts) HasIdentity(email string) bool {
+	_, ok := a.keys[strings.ToLower(email)]
+	return ok
+}
+
+func (a *Accounts) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
+	key, ok := a.keys[strings.ToLower(email)]
+	if ok {
+		return key, nil
+	}
+	return nil, errors.New("identity key not found")
 }
 
 // GenerateKeys creates the key files necessary to use the client
@@ -136,8 +170,8 @@ func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 	return nil
 }
 
-func (c *Config) GetAccountKey(account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
-	privateKeyFile := CreateKeyFileName(keysDir, "wire", account.Name, account.Provider, "private")
+func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
+	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, "private")
 	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
 	v := vault.Vault{
 		Type:       "private",
@@ -179,7 +213,7 @@ func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) 
 }
 
 func (c *Config) HasIdentity(email string) bool {
-	name, provider, err := splitEmail(strings.ToLower(email))
+	name, provider, err := SplitEmail(strings.ToLower(email))
 	if err != nil {
 		log.Debugf("HasIdentity: failure: %s", err)
 		return false // XXX

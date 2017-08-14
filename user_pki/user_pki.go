@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"strings"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 )
@@ -42,7 +43,7 @@ type JsonFileUserPKI struct {
 }
 
 func (j *JsonFileUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
-	value, ok := j.userMap[email]
+	value, ok := j.userMap[strings.ToLower(email)]
 	if !ok {
 		return nil, errors.New("json user pki email lookup failed")
 	}
