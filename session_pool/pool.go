@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/katzenpost/client/auth"
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
@@ -36,43 +35,30 @@ type SessionPool struct {
 	sessions map[string]*wire.Session
 }
 
-func NewSessionPool() *SessionPool {
+func New(accounts *config.AccountsMap, config *config.Config, providerAuthenticator wire.PeerAuthenticator, mixPKI pki.Client) (*SessionPool, error) {
 	s := SessionPool{
 		sessions: make(map[string]*wire.Session),
 	}
-	return &s
-}
-
-func PoolFromAccounts(config *config.Config, keysDir, passphrase string, mixPKI pki.Client) (*SessionPool, error) {
-	pool := NewSessionPool()
-	providerAuthenticator, err := auth.NewProviderAuthenticator(config)
-	if err != nil {
-		return nil, err
-	}
-	for _, account := range config.Account {
-		privateKey, err := config.GetAccountKey("wire", account, keysDir, passphrase)
+	for _, acct := range config.Account {
+		email := fmt.Sprintf("%s@%s", acct.Name, acct.Provider)
+		privateKey, err := accounts.GetIdentityKey(email)
 		if err != nil {
 			return nil, err
 		}
 		sessionConfig := wire.SessionConfig{
 			Authenticator:     providerAuthenticator,
-			AdditionalData:    []byte(account.Name),
+			AdditionalData:    []byte(acct.Name),
 			AuthenticationKey: privateKey,
 			RandomReader:      rand.Reader,
 		}
-		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
 		session, err := wire.NewSession(&sessionConfig, true)
 		if err != nil {
 			return nil, err
 		}
-		providerDesc, err := mixPKI.GetProviderDescriptor(account.Provider)
+		providerDesc, err := mixPKI.GetProviderDescriptor(acct.Provider)
 		if err != nil {
 			return nil, err
 		}
-
-		log.Debugf("connecting to Provider %s on ip %s port %d", providerDesc.Name, providerDesc.Ipv4Address, providerDesc.TcpPort)
-		log.Debugf("pool %v email %v session %v", pool, email, session)
-
 		// XXX hard code "tcp" here?
 		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", providerDesc.Ipv4Address, providerDesc.TcpPort))
 		if err != nil {
@@ -82,9 +68,9 @@ func PoolFromAccounts(config *config.Config, keysDir, passphrase string, mixPKI 
 		if err != nil {
 			return nil, err
 		}
-		pool.Add(email, session)
+		s.sessions[email] = session
 	}
-	return pool, nil
+	return &s, nil
 }
 
 func (s *SessionPool) Add(identity string, session *wire.Session) {

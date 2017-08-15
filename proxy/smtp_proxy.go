@@ -163,7 +163,7 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 // If the client stops operating before receiving the corresponding ACK message,
 // the client will later be able to retreive messages from disk and retransmit them.
 type SubmitProxy struct {
-	accounts *config.Accounts
+	accounts *config.AccountsMap
 
 	// randomReader is an implementation of the io.Reader interface
 	// which is used to generate ephemeral keys for our wire protocol's
@@ -182,7 +182,7 @@ type SubmitProxy struct {
 }
 
 // NewSubmitProxy creates a new SubmitProxy struct
-func NewSubmitProxy(routeFactory *path_selection.RouteFactory, accounts *config.Accounts, randomReader io.Reader, userPki user_pki.UserPKI, pool *session_pool.SessionPool) *SubmitProxy {
+func NewSubmitProxy(routeFactory *path_selection.RouteFactory, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, pool *session_pool.SessionPool) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		routeFactory: routeFactory,
 		accounts:     accounts,

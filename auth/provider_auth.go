@@ -30,7 +30,7 @@ type ProviderAuthenticator struct {
 	keysMap map[[255]byte]*ecdh.PublicKey
 }
 
-func NewProviderAuthenticator(config *config.Config) (*ProviderAuthenticator, error) {
+func New(config *config.Config) (*ProviderAuthenticator, error) {
 	keysMap, err := config.GetProviderPinnedKeys()
 	if err != nil {
 		return nil, err

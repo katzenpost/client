@@ -21,6 +21,14 @@ const (
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
 
+	// EndToEndKeyType is the string representing the end to end
+	// messaging key type
+	EndToEndKeyType = "e2e"
+
+	// LinkLayerKeyType is the string representing the link layer
+	// wire protocol key type
+	LinkLayerKeyType = "wire"
+
 	// DefaultSMTPNetwork is the default network type used for our SMTP proxy service
 	DefaultSMTPNetwork = "tcp"
 

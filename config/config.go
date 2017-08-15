@@ -61,12 +61,56 @@ type Config struct {
 	POP3Proxy       POP3Proxy
 }
 
-type Accounts struct {
-	keys map[string]*ecdh.PrivateKey
+type AccountsMap map[string]*ecdh.PrivateKey
+
+func (a *AccountsMap) HasIdentity(email string) bool {
+	_, ok := (*a)[strings.ToLower(email)]
+	return ok
+}
+
+func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
+	key, ok := (*a)[strings.ToLower(email)]
+	if ok {
+		return key, nil
+	}
+	return nil, errors.New("identity key not found")
 }
 
 func CreateKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
+}
+
+func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
+	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, "private")
+	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
+	v := vault.Vault{
+		Type:       "private",
+		Email:      email,
+		Passphrase: passphrase,
+		Path:       privateKeyFile,
+	}
+	plaintext, err := v.Open()
+	if err != nil {
+		return nil, err
+	}
+	key := ecdh.PrivateKey{}
+	key.FromBytes(plaintext)
+	return &key, nil
+}
+
+// GetAccountKeysMap returns an Accounts struct which contains
+// a map of email to private key for each account
+func (c *Config) AccountsMap(keyType, keysDir, passphrase string) (*AccountsMap, error) {
+	accounts := make(AccountsMap)
+	for _, account := range c.Account {
+		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
+		privateKey, err := c.GetAccountKey(keyType, account, keysDir, passphrase)
+		if err != nil {
+			return nil, err
+		}
+		accounts[email] = privateKey
+	}
+	return &accounts, nil
 }
 
 func writeKey(keysDir, prefix, name, provider, passphrase string) error {
@@ -116,36 +160,6 @@ func FromFile(fileName string) (*Config, error) {
 	return &config, nil
 }
 
-// Accounts returns an Accounts struct which contains
-// a map of email to private key for each account
-func (c *Config) Accounts(keysDir, passphrase string) (*Accounts, error) {
-	accounts := Accounts{
-		keys: make(map[string]*ecdh.PrivateKey),
-	}
-	for _, account := range c.Account {
-		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
-		privateKey, err := c.GetAccountKey("e2e", account, keysDir, passphrase)
-		if err != nil {
-			return nil, err
-		}
-		accounts.keys[email] = privateKey
-	}
-	return &accounts, nil
-}
-
-func (a *Accounts) HasIdentity(email string) bool {
-	_, ok := a.keys[strings.ToLower(email)]
-	return ok
-}
-
-func (a *Accounts) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
-	key, ok := a.keys[strings.ToLower(email)]
-	if ok {
-		return key, nil
-	}
-	return nil, errors.New("identity key not found")
-}
-
 // GenerateKeys creates the key files necessary to use the client
 func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 	var err error
@@ -168,24 +182,6 @@ func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 		}
 	}
 	return nil
-}
-
-func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
-	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, "private")
-	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
-	v := vault.Vault{
-		Type:       "private",
-		Email:      email,
-		Passphrase: passphrase,
-		Path:       privateKeyFile,
-	}
-	plaintext, err := v.Open()
-	if err != nil {
-		return nil, err
-	}
-	key := ecdh.PrivateKey{}
-	key.FromBytes(plaintext)
-	return &key, nil
 }
 
 // GetProviderPins returns a mapping of
