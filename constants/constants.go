@@ -18,6 +18,14 @@
 package constants
 
 const (
+	// PoissonLambda is the poisson distribution's lambda parameter
+	// used for setting mix hop delays
+	// XXX fix me
+	PoissonLambda = float64(.234)
+
+	// HopsPerPath is the number of mix hops per path through the mix network
+	HopsPerPath = 3
+
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
 
