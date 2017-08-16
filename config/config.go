@@ -110,7 +110,7 @@ func (c *Config) AccountsMap(keyType, keysDir, passphrase string) (*AccountsMap,
 		if err != nil {
 			return nil, err
 		}
-		accounts[email] = privateKey
+		accounts[strings.ToLower(email)] = privateKey
 	}
 	return &accounts, nil
 }
