@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
@@ -61,6 +62,7 @@ type Config struct {
 	POP3Proxy       POP3Proxy
 }
 
+// AccountsMap map of email -> end to end private key
 type AccountsMap map[string]*ecdh.PrivateKey
 
 func (a *AccountsMap) HasIdentity(email string) bool {
@@ -167,13 +169,11 @@ func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 		name := c.Account[i].Name
 		provider := c.Account[i].Provider
 		if name != "" && provider != "" {
-			// wire protocol keys
-			err = writeKey(keysDir, "wire", name, provider, passphrase)
+			err = writeKey(keysDir, constants.LinkLayerKeyType, name, provider, passphrase)
 			if err != nil {
 				return err
 			}
-			// end to end messaging keys
-			err = writeKey(keysDir, "e2e", name, provider, passphrase)
+			err = writeKey(keysDir, constants.EndToEndKeyType, name, provider, passphrase)
 			if err != nil {
 				return err
 			}
@@ -206,18 +206,4 @@ func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) 
 		keysMap[nameField] = publicKey
 	}
 	return keysMap, nil
-}
-
-func (c *Config) HasIdentity(email string) bool {
-	name, provider, err := SplitEmail(strings.ToLower(email))
-	if err != nil {
-		log.Debugf("HasIdentity: failure: %s", err)
-		return false // XXX
-	}
-	for i := 0; i < len(c.Account); i++ {
-		if name == strings.ToLower(c.Account[i].Name) && provider == strings.ToLower(c.Account[i].Provider) {
-			return true
-		}
-	}
-	return false
 }
