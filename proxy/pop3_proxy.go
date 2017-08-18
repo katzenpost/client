@@ -74,11 +74,12 @@ func (s Pop3BackendSession) DeleteMessages(items []int) error {
 	return nil
 }
 
-func (s Pop3BackendSession) Close() {
+func (s Pop3BackendSession) Close() error {
+	return s.db.Close()
 }
 
 type Pop3Backend struct {
-	db *bolt.DB
+	dbFile string
 }
 
 func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) {
@@ -90,24 +91,34 @@ func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) 
 		}
 		return nil
 	}
-	err := b.db.View(transaction)
+	db, err := bolt.Open(b.dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
+	if err != nil {
+		return nil, err
+	}
+	err = db.View(transaction)
 	if err != nil {
 		return nil, fmt.Errorf("invalid POP3 user name: '%s'", user)
 	}
 	return Pop3BackendSession{
-		db:          b.db,
+		db:          db,
 		accountName: accountName,
 	}, nil
 }
 
 type Pop3Proxy struct {
-	db *bolt.DB
+	dbFile string
 }
 
-func NewPop3Proxy(dbfile string) (*Pop3Proxy, error) {
+func NewPop3Proxy(dbFile string) (*Pop3Proxy, error) {
 	var err error
-	p := Pop3Proxy{}
-	p.db, err = bolt.Open(dbfile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
+	p := Pop3Proxy{
+		dbFile: dbFile,
+	}
+	db, err := bolt.Open(dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
+	if err != nil {
+		return nil, err
+	}
+	err = db.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +128,7 @@ func NewPop3Proxy(dbfile string) (*Pop3Proxy, error) {
 func (p *Pop3Proxy) HandleConnection(conn net.Conn) error {
 	defer conn.Close()
 	backend := Pop3Backend{
-		db: p.db,
+		dbFile: p.dbFile,
 	}
 	pop3Session := pop3.NewSession(conn, backend)
 	pop3Session.Serve()
