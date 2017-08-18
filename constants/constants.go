@@ -17,7 +17,15 @@
 // Package constants contains the client constants for Katzenpost.
 package constants
 
+import (
+	"time"
+)
+
 const (
+	// DatabaseConnectTimeout is a duration used as the connect timeout
+	// when we access our local databases (for POP3&SMTP proxies)
+	DatabaseConnectTimeout = 3 * time.Second
+
 	// PoissonLambda is the poisson distribution's lambda parameter
 	// used for setting mix hop delays
 	// XXX fix me

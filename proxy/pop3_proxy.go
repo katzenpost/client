@@ -18,58 +18,59 @@
 package proxy
 
 import (
-	"bytes"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 
+	"github.com/boltdb/bolt"
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/pop3"
-	"github.com/katzenpost/client/session_pool"
 )
 
-const (
-	testUser = "alice"
-	testPass = "teatime475"
-)
-
-type Pop3BackendSession struct{}
+type Pop3BackendSession struct {
+	db          *bolt.DB
+	accountName string
+}
 
 func (s Pop3BackendSession) Messages() ([][]byte, error) {
-	messages := [][]byte{
-		[]byte(`Return-Path: 
-X-Original-To: mailtest@normal.gateway.name
-Delivered-To: mailtest@normal.gateway.name
-Received: from normal.mailhost.name (node18 [192.168.2.38])
-        by normal.gateway.name (Postfix) with ESMTP id DEADBEEFCA
-        for ; Tue, 12 Apr 2017 22:24:53 -0400 (EDT)
-Received: from me?here.com (unknown [192.168.2.250])
-        by normal.mailhost.name (Postfix) with SMTP id AAAAAAAAAA
-        for ; Tue, 12 Apr 2017 22:24:03 -0400 (EDT)
-To: fro@hill
-From: pp@pp
-Subject: Forged e-mail
-Message-Id: <20050413022403.4653B14112@normal.mailhost.name>
-Date: Tue, 12 Apr 2005 22:24:03 -0400 (EDT)
-
-lossy packet switching network
-`),
-		[]byte(`"The time has come," the Walrus said,
-"To talk of many things:
-Of shoes-and ships-and sealing-wax-
-Of cabbages-and kings-
-And why the sea is boiling hot-
-And whether pigs have wings."
-
-.
-..
-... Byte-stuffing is hard, let's go shopping!
-..
-.
-`),
+	messages := [][]byte{}
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(s.accountName))
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			messages = append(messages, v)
+		}
+		return nil
+	}
+	err := s.db.View(transaction)
+	if err != nil {
+		return nil, err
 	}
 	return messages, nil
 }
 
-func (s Pop3BackendSession) DeleteMessages([]int) error {
+func (s Pop3BackendSession) deleteMessage(item int) error {
+	var err error
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(s.accountName))
+		err := b.Delete([]byte(strconv.Itoa(item)))
+		return err
+	}
+	err = s.db.Update(transaction)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s Pop3BackendSession) DeleteMessages(items []int) error {
+	for _, x := range items {
+		err := s.deleteMessage(x)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -77,31 +78,48 @@ func (s Pop3BackendSession) Close() {
 }
 
 type Pop3Backend struct {
+	db *bolt.DB
 }
 
 func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) {
-	if !bytes.Equal(user, []byte(testUser)) || !bytes.Equal(pass, []byte(testPass)) {
-		return nil, fmt.Errorf("invalid user/password: '%s'/'%s'", user, pass)
+	accountName := strings.ToLower(string(user))
+	transaction := func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(accountName))
+		if bucket == nil {
+			return fmt.Errorf("no such boltdb bucket named: %s", accountName)
+		}
+		return nil
 	}
-	return Pop3BackendSession{}, nil
+	err := b.db.View(transaction)
+	if err != nil {
+		return nil, fmt.Errorf("invalid POP3 user name: '%s'", user)
+	}
+	return Pop3BackendSession{
+		db:          b.db,
+		accountName: accountName,
+	}, nil
 }
 
 type Pop3Proxy struct {
+	db *bolt.DB
 }
 
-func NewPop3Proxy() *Pop3Proxy {
+func NewPop3Proxy(dbfile string) (*Pop3Proxy, error) {
+	var err error
 	p := Pop3Proxy{}
-	return &p
+	p.db, err = bolt.Open(dbfile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 func (p *Pop3Proxy) HandleConnection(conn net.Conn) error {
 	defer conn.Close()
-	backend := Pop3Backend{}
+	backend := Pop3Backend{
+		db: p.db,
+	}
 	pop3Session := pop3.NewSession(conn, backend)
 	pop3Session.Serve()
 	return nil
-}
-
-type QueueRetreiver struct {
-	pool *session_pool.SessionPool
 }

@@ -19,11 +19,11 @@ package outgoing_queue
 import (
 	"encoding/base64"
 	"encoding/json"
-	"time"
 
 	"github.com/boltdb/bolt"
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/sphinx/constants"
+	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 )
 
 const (
@@ -35,7 +35,7 @@ const (
 type StorageBlock struct {
 	SenderProvider    string
 	RecipientProvider string
-	RecipientID       *[constants.RecipientIDLength]byte
+	RecipientID       *[sphinxconstants.RecipientIDLength]byte
 	Payload           []byte
 }
 
@@ -54,7 +54,7 @@ func (j *JsonStorageBlock) StorageBlock() (*StorageBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	recipientID := [constants.RecipientIDLength]byte{}
+	recipientID := [sphinxconstants.RecipientIDLength]byte{}
 	copy(recipientID[:], id)
 	payload, err := base64.StdEncoding.DecodeString(j.Payload)
 	if err != nil {
@@ -110,7 +110,7 @@ type OutgoingStore struct {
 func New(dbname string) (*OutgoingStore, error) {
 	o := OutgoingStore{}
 	var err error
-	o.db, err = bolt.Open(dbname, 0600, &bolt.Options{Timeout: 3 * time.Second})
+	o.db, err = bolt.Open(dbname, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (o *OutgoingStore) Close() error {
 // Push pushes a given StorageBlock into our database,
 // assigning it a random SURB ID for use as it's key
 func (o *OutgoingStore) Push(b *StorageBlock) error {
-	surbID := [constants.SURBIDLength]byte{}
+	surbID := [sphinxconstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
 		return err
@@ -137,7 +137,7 @@ func (o *OutgoingStore) Push(b *StorageBlock) error {
 
 // Put puts a given *StorageBlock into our db with the given surbID
 // as it's lookup key
-func (o *OutgoingStore) Put(surbID *[constants.SURBIDLength]byte, b *StorageBlock) error {
+func (o *OutgoingStore) Put(surbID *[sphinxconstants.SURBIDLength]byte, b *StorageBlock) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
@@ -156,13 +156,13 @@ func (o *OutgoingStore) Put(surbID *[constants.SURBIDLength]byte, b *StorageBloc
 }
 
 // GetKeys returns all the keys currently in the database
-func (o *OutgoingStore) GetKeys() ([][constants.SURBIDLength]byte, error) {
-	keys := [][constants.SURBIDLength]byte{}
+func (o *OutgoingStore) GetKeys() ([][sphinxconstants.SURBIDLength]byte, error) {
+	keys := [][sphinxconstants.SURBIDLength]byte{}
 	err := o.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		c := b.Cursor()
 		for k, _ := c.First(); k != nil; k, _ = c.Next() {
-			surbid := [constants.SURBIDLength]byte{}
+			surbid := [sphinxconstants.SURBIDLength]byte{}
 			copy(surbid[:], k)
 			keys = append(keys, surbid)
 		}
@@ -176,7 +176,7 @@ func (o *OutgoingStore) GetKeys() ([][constants.SURBIDLength]byte, error) {
 
 // Remove removes a specific *StorageBlock from our db
 // specified by the SURB ID
-func (o *OutgoingStore) Remove(surbID *[constants.SURBIDLength]byte) error {
+func (o *OutgoingStore) Remove(surbID *[sphinxconstants.SURBIDLength]byte) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
