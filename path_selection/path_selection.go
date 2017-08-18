@@ -176,12 +176,11 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 			if isSURB {
 				surbReply := new(commands.SURBReply)
 				id := [constants.SURBIDLength]byte{}
-				surbID = &id
-				_, err := rand.Reader.Read(surbID[:])
+				_, err := rand.Reader.Read(id[:])
 				if err != nil {
 					return nil, nil, err
 				}
-				surbReply.ID = *surbID
+				surbReply.ID = id
 				path[i].Commands = append(path[i].Commands, surbReply)
 			} else {
 				// Terminal hop, add the recipient.
@@ -200,10 +199,8 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // see https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
 // The generated forward and reply paths are intended to be used
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
-// protocol for mix network using the Poisson mix strategy.
-func (r *RouteFactory) next(senderProviderName,
-	recipientProviderName string,
-	recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+// protocol for mix networks using the Poisson mix strategy.
+func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
 
 	// 1. Sample all forward and SURB delays.
 	forwardDelays := getDelays(r.lambda, r.nrHops)

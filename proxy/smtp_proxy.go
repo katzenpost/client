@@ -200,6 +200,29 @@ func NewSubmitProxy(routeFactory *path_selection.RouteFactory, accounts *config.
 	return &submissionProxy
 }
 
+func (p *SubmitProxy) sendBlock(senderProvider, recipientProvider string, recipientID *[sphinxconstants.RecipientIDLength]byte, blockCiphertext []byte) {
+	// XXX todo: use the replyPath to compose the SURB-ACK
+	forwardPath, _, _, err := p.routeFactory.Build(senderProvider, recipientProvider, &recipientID)
+	if err != nil {
+		return err
+	}
+	sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, blockCiphertext)
+	if err != nil {
+		return err
+	}
+	cmd := commands.SendPacket{
+		SphinxPacket: sphinxPacket,
+	}
+	session, err := p.sessionPool.Get(sender)
+	if err != nil {
+		return err
+	}
+	err = session.SendCommand(cmd)
+	if err != nil {
+		return err
+	}
+}
+
 // fragmentMessage fragments a message into a slice of blocks
 func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
 	blocks := []*block.Block{}
@@ -258,26 +281,9 @@ func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error
 		}
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
-		// XXX todo: use the replyPath to compose the SURB-ACK
-		forwardPath, _, _, err := p.routeFactory.Build(senderProvider, recipientProvider, &recipientID)
-		if err != nil {
-			return err
-		}
-		sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, blockCiphertext)
-		if err != nil {
-			return err
-		}
-		cmd := commands.SendPacket{
-			SphinxPacket: sphinxPacket,
-		}
-		session, err := p.sessionPool.Get(sender)
-		if err != nil {
-			return err
-		}
-		err = session.SendCommand(cmd)
-		if err != nil {
-			return err
-		}
+
+		// XXX persister block to local db here
+
 	}
 	return nil
 }

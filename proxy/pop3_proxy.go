@@ -23,6 +23,7 @@ import (
 	"net"
 
 	"github.com/katzenpost/client/pop3"
+	"github.com/katzenpost/client/session_pool"
 )
 
 const (
@@ -99,4 +100,8 @@ func (p *Pop3Proxy) HandleConnection(conn net.Conn) error {
 	pop3Session := pop3.NewSession(conn, backend)
 	pop3Session.Serve()
 	return nil
+}
+
+type QueueRetreiver struct {
+	pool *session_pool.SessionPool
 }

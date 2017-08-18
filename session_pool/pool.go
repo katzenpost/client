@@ -31,10 +31,13 @@ import (
 
 var log = logging.MustGetLogger("mixclient")
 
+// SessionPool maps sender email string to sender identity
+// wire protocol session with the Provider
 type SessionPool struct {
 	sessions map[string]*wire.Session
 }
 
+// New creates a new SessionPool
 func New(accounts *config.AccountsMap, config *config.Config, providerAuthenticator wire.PeerAuthenticator, mixPKI pki.Client) (*SessionPool, error) {
 	s := SessionPool{
 		sessions: make(map[string]*wire.Session),
