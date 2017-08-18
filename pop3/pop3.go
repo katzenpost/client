@@ -107,7 +107,7 @@ type BackendSession interface {
 	DeleteMessages([]int) error
 
 	// Close unlocks the user's maildrop and tears down the BackendSession.
-	Close()
+	Close() error
 }
 
 // Session is a POP3 server session.

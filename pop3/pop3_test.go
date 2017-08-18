@@ -77,7 +77,8 @@ func (s TestBackendSession) DeleteMessages([]int) error {
 	return nil
 }
 
-func (s TestBackendSession) Close() {
+func (s TestBackendSession) Close() error {
+	return nil
 }
 
 type TestBackend struct {
