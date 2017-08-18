@@ -115,6 +115,17 @@ func (c *Config) AccountsMap(keyType, keysDir, passphrase string) (*AccountsMap,
 	return &accounts, nil
 }
 
+// AccountIdentities returns a list of e-mail addresses or
+// account identities which the user has configured
+func (c *Config) AccountIdentities() []string {
+	accounts := []string{}
+	for _, account := range c.Account {
+		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
+		accounts = append(accounts, email)
+	}
+	return accounts
+}
+
 func writeKey(keysDir, prefix, name, provider, passphrase string) error {
 	privateKeyFile := CreateKeyFileName(keysDir, prefix, name, provider, "private")
 	_, err := os.Stat(privateKeyFile)

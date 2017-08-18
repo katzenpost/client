@@ -28,11 +28,15 @@ import (
 	"github.com/katzenpost/client/pop3"
 )
 
+// Pop3BackendSession is our boltdb backed implementation
+// of our pop3 BackendSession interface
 type Pop3BackendSession struct {
 	db          *bolt.DB
 	accountName string
 }
 
+// Messages returns a list of messages stored in our
+// bolt database
 func (s Pop3BackendSession) Messages() ([][]byte, error) {
 	messages := [][]byte{}
 	transaction := func(tx *bolt.Tx) error {
@@ -50,6 +54,8 @@ func (s Pop3BackendSession) Messages() ([][]byte, error) {
 	return messages, nil
 }
 
+// deleteMessage deletes a single message from
+// our backing database storage
 func (s Pop3BackendSession) deleteMessage(item int) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
@@ -64,6 +70,7 @@ func (s Pop3BackendSession) deleteMessage(item int) error {
 	return nil
 }
 
+// DeleteMessages deletes a list of messages
 func (s Pop3BackendSession) DeleteMessages(items []int) error {
 	for _, x := range items {
 		err := s.deleteMessage(x)
@@ -74,14 +81,54 @@ func (s Pop3BackendSession) DeleteMessages(items []int) error {
 	return nil
 }
 
+// Close closes the session in this case
+// closing our database handle
 func (s Pop3BackendSession) Close() error {
 	return s.db.Close()
 }
 
+// Pop3Backend implements our pop3 Backend interface
 type Pop3Backend struct {
 	dbFile string
 }
 
+// NewPop3Backend creates a new Pop3Backend given the db file path
+func NewPop3Backend(dbFile string) Pop3Backend {
+	p := Pop3Backend{
+		dbFile: dbFile,
+	}
+	return p
+}
+
+// createAccountBucket uses the given db handle and account name
+// to create a boltdb storage bucket
+func (b Pop3Backend) createAccountBucket(db *bolt.DB, account string) error {
+	transaction := func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(account))
+		return err
+	}
+	err := db.Update(transaction)
+	return err
+}
+
+// CreateAccountBuckets is used to create a set of storage account buckets
+// that will store received messages
+func (b Pop3Backend) CreateAccountBuckets(accounts []string) error {
+	db, err := bolt.Open(b.dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		err := b.createAccountBucket(db, strings.ToLower(account))
+		if err != nil {
+			return err
+		}
+	}
+	return db.Close()
+}
+
+// NewSession returns a BackendSession implementation or an error given
+// the user name and password
 func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) {
 	accountName := strings.ToLower(string(user))
 	transaction := func(tx *bolt.Tx) error {
@@ -105,31 +152,26 @@ func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) 
 	}, nil
 }
 
-type Pop3Proxy struct {
+// Pop3Service is a pop3 service which is backed by
+// a local boltdb
+type Pop3Service struct {
 	dbFile string
 }
 
-func NewPop3Proxy(dbFile string) (*Pop3Proxy, error) {
-	var err error
-	p := Pop3Proxy{
+// NewPop3Service creates a new Pop3Service
+// with the given boltdb filename
+func NewPop3Service(dbFile string) *Pop3Service {
+	p := Pop3Service{
 		dbFile: dbFile,
 	}
-	db, err := bolt.Open(dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
-	if err != nil {
-		return nil, err
-	}
-	err = db.Close()
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
+	return &p
 }
 
-func (p *Pop3Proxy) HandleConnection(conn net.Conn) error {
+// HandleConnection is a blocking function that uses the given
+// connection to handle a pop3 session
+func (p *Pop3Service) HandleConnection(conn net.Conn) error {
 	defer conn.Close()
-	backend := Pop3Backend{
-		dbFile: p.dbFile,
-	}
+	backend := NewPop3Backend(p.dbFile)
 	pop3Session := pop3.NewSession(conn, backend)
 	pop3Session.Serve()
 	return nil

@@ -111,8 +111,7 @@ func TestPop3Basics(t *testing.T) {
 	err = setupPop3Db(dbFile.Name(), testUser)
 	require.NoError(err, "unexpected setupPop3Db error")
 
-	pop3, err := NewPop3Proxy(dbFile.Name())
-	require.NoError(err, "unexpected NewPop3Proxy error")
+	pop3 := NewPop3Service(dbFile.Name())
 
 	serverConn, clientConn := net.Pipe()
 	var wg sync.WaitGroup
