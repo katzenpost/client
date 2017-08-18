@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
@@ -119,6 +120,18 @@ func New(dbname string) (*OutgoingStore, error) {
 // Close closes our OutgoingStore database
 func (o *OutgoingStore) Close() error {
 	err := o.db.Close()
+	return err
+}
+
+// Push pushes a given StorageBlock into our database,
+// assigning it a random SURB ID for use as it's key
+func (o *OutgoingStore) Push(b *StorageBlock) error {
+	surbID := [constants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(surbID[:])
+	if err != nil {
+		return err
+	}
+	err = o.Put(&surbID, b)
 	return err
 }
 

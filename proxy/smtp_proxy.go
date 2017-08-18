@@ -26,17 +26,16 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/katzenpost/client/block"
 	"github.com/katzenpost/client/config"
 	clientconstants "github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/crypto/block"
+	"github.com/katzenpost/client/outgoing_queue"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/sphinx"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/wire/commands"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
@@ -179,16 +178,17 @@ type SubmitProxy struct {
 	routeFactory *path_selection.RouteFactory
 
 	whitelist []string
+
+	outgoingStore *outgoing_queue.OutgoingStore
 }
 
-// NewSubmitProxy creates a new SubmitProxy struct
-func NewSubmitProxy(routeFactory *path_selection.RouteFactory, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, pool *session_pool.SessionPool) *SubmitProxy {
+// NewSmtpProxy creates a new SubmitProxy struct
+func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, outgoingStore *outgoing_queue.OutgoingStore) *SubmitProxy {
 	submissionProxy := SubmitProxy{
-		routeFactory: routeFactory,
-		accounts:     accounts,
-		randomReader: randomReader,
-		userPKI:      userPki,
-		sessionPool:  pool,
+		accounts:      accounts,
+		randomReader:  randomReader,
+		userPKI:       userPki,
+		outgoingStore: outgoingStore,
 		whitelist: []string{ // XXX yawning fix me
 			"To",
 			"From",
@@ -200,35 +200,12 @@ func NewSubmitProxy(routeFactory *path_selection.RouteFactory, accounts *config.
 	return &submissionProxy
 }
 
-func (p *SubmitProxy) sendBlock(senderProvider, recipientProvider string, recipientID *[sphinxconstants.RecipientIDLength]byte, blockCiphertext []byte) {
-	// XXX todo: use the replyPath to compose the SURB-ACK
-	forwardPath, _, _, err := p.routeFactory.Build(senderProvider, recipientProvider, &recipientID)
-	if err != nil {
-		return err
-	}
-	sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, blockCiphertext)
-	if err != nil {
-		return err
-	}
-	cmd := commands.SendPacket{
-		SphinxPacket: sphinxPacket,
-	}
-	session, err := p.sessionPool.Get(sender)
-	if err != nil {
-		return err
-	}
-	err = session.SendCommand(cmd)
-	if err != nil {
-		return err
-	}
-}
-
 // fragmentMessage fragments a message into a slice of blocks
 func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
 	blocks := []*block.Block{}
 	if len(message) <= constants.ForwardPayloadLength {
 		id := [clientconstants.MessageIDLength]byte{}
-		_, err := rand.Reader.Read(id[:])
+		_, err := p.randomReader.Read(id[:])
 		if err != nil {
 			return nil, err
 		}
@@ -245,17 +222,9 @@ func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
 	return blocks, nil
 }
 
-// sendMessage sends a message to a given receiver identity
-//
-// The sender e-mail address is used to select the client's end to end cryptographic
-// identity in sending end to end messages, ACK messaging queuing identification on the provider
-// and link layer authentication with the associated Provider mixnet service.
-//
-// TODO: implement the Stop and Wait ARQ protocol scheme here!
-func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error {
-	log.Debugf("sendMessage no-op function: sender %s receiver %s", sender, receiver)
-	log.Debugf("message:\n%s\n", string(message))
-
+// enqueueMessage enqueues the message in our persistent message store
+// so that it can soon be sent on it's way to the recipient.
+func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) error {
 	blocks, err := p.fragmentMessage(message)
 	if err != nil {
 		return err
@@ -281,9 +250,16 @@ func (p *SubmitProxy) sendMessage(sender, receiver string, message []byte) error
 		}
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
-
-		// XXX persister block to local db here
-
+		storageBlock := outgoing_queue.StorageBlock{
+			SenderProvider:    senderProvider,
+			RecipientProvider: recipientProvider,
+			RecipientID:       &recipientID,
+			Payload:           blockCiphertext,
+		}
+		err = p.outgoingStore.Push(&storageBlock)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -346,7 +322,7 @@ func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 			if err != nil {
 				return err
 			}
-			err = p.sendMessage(sender, receiver, []byte(messageString))
+			err = p.enqueueMessage(sender, receiver, []byte(messageString))
 			if err != nil {
 				return err
 			}

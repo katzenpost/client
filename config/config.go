@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	"github.com/katzenpost/client/constants"
-	"github.com/katzenpost/client/vault"
+	"github.com/katzenpost/client/crypto/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/op/go-logging"
