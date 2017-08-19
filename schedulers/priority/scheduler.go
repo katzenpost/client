@@ -24,22 +24,22 @@ import (
 )
 
 type PriorityScheduler struct {
-	queue          *queue.PriorityQueue
-	payloadHandler func([]byte)
-	timer          *time.Timer
+	queue       *queue.PriorityQueue
+	taskHandler func(interface{})
+	timer       *time.Timer
 }
 
-func New(payloadHandler func([]byte)) *PriorityScheduler {
+func New(taskHandler func(interface{})) *PriorityScheduler {
 	s := PriorityScheduler{
-		queue:          queue.New(),
-		payloadHandler: payloadHandler,
+		queue:       queue.New(),
+		taskHandler: taskHandler,
 	}
 	return &s
 }
 
 func (s *PriorityScheduler) run() {
 	entry := s.queue.Pop()
-	s.payloadHandler(entry.Value)
+	s.taskHandler(entry.Value)
 	s.schedule()
 }
 
@@ -59,9 +59,9 @@ func (s *PriorityScheduler) schedule() {
 	}
 }
 
-func (s *PriorityScheduler) Add(duration time.Duration, payload []byte) {
+func (s *PriorityScheduler) Add(duration time.Duration, task interface{}) {
 	now := monotime.Now()
 	priority := now + duration
-	s.queue.Enqueue(uint64(priority), payload)
+	s.queue.Enqueue(uint64(priority), task)
 	s.schedule()
 }

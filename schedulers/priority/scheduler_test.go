@@ -24,6 +24,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type TestTask struct {
+	Value string
+	Delay time.Duration
+}
+
 func TestPrioritySchedulerBasics(t *testing.T) {
 	require := require.New(t)
 
@@ -31,17 +36,39 @@ func TestPrioritySchedulerBasics(t *testing.T) {
 	wg.Add(1)
 
 	counter := 0
-	handler := func(payload []byte) {
-		t.Logf("handler: payload len %d\n", len(payload))
+	handler := func(payload interface{}) {
+		s, ok := payload.(string)
+		require.Equal(true, ok, "handler type assertion failure")
+		t.Logf("handler payload is %s\n", s)
 		counter += 1
 	}
 	s := New(handler)
 
-	payload1 := []byte{1, 2, 3, 4}
-	s.Add(time.Millisecond*100, payload1)
+	testPlatter := []TestTask{
+		{
+			Value: "A reliable method of fighting with tanks are Molotov cocktails.",
+			Delay: time.Millisecond * 100,
+		},
+		{
+			Value: "Use the same means to destroy enemy armored vehicles that you would tanks.",
+			Delay: time.Millisecond * 100,
+		},
+		{
+			Value: `When you are even with an opponent, it is essential to keep thinking of
+stabbing him in the face with the tip of your sword in the intervals between the opponent's
+sword blows and your own sword blows.`,
+			Delay: time.Millisecond * 90,
+		},
+		{
+			Value: `Stabbing in the heart is used when fighting in a place where there is no
+room for slashing, either overhead or to the sides, so you stab the opponent.`,
+			Delay: time.Millisecond * 120,
+		},
+	}
 
-	payload2 := []byte{2, 4, 5}
-	s.Add(time.Millisecond*75, payload2)
+	for _, v := range testPlatter {
+		s.Add(v.Delay, v.Value)
+	}
 
 	time.AfterFunc(150*time.Millisecond, func() {
 		defer wg.Done()
@@ -49,5 +76,5 @@ func TestPrioritySchedulerBasics(t *testing.T) {
 
 	wg.Wait()
 	require.Equal(0, s.queue.Len(), "queue size mismatch")
-	require.Equal(2, counter, "counter mismatch")
+	require.Equal(len(testPlatter), counter, "counter mismatch")
 }
