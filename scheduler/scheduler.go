@@ -52,7 +52,9 @@ func (s *Scheduler) Schedule(duration time.Duration, payload []byte) {
 		_ = s.queue.Pop()
 		s.payloadHandler(entry.Value)
 	} else {
-		s.timer.Stop()
-		s.timer = time.AfterFunc(now-time.Duration(entry.Priority), s.run)
+		if s.timer != nil {
+			s.timer.Stop()
+		}
+		s.timer = time.AfterFunc(time.Duration(entry.Priority)-now, s.run)
 	}
 }
