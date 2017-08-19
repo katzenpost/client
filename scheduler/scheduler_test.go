@@ -20,24 +20,34 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestScheduler(t *testing.T) {
-	var wg sync.WaitGroup
-	wg.Add(2)
+func TestPrioritySchedulerBasics(t *testing.T) {
+	require := require.New(t)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	counter := 0
 	handler := func(payload []byte) {
 		t.Logf("handler: payload len %d\n", len(payload))
-		wg.Done()
+		counter += 1
 	}
-
 	s := New(handler)
 
 	payload1 := []byte{1, 2, 3, 4}
-	s.Schedule(time.Second*30, payload1)
+	s.Add(time.Millisecond*100, payload1)
 
 	payload2 := []byte{2, 4, 5}
-	s.Schedule(time.Second*3, payload2)
+	s.Add(time.Millisecond*75, payload2)
+
+	time.AfterFunc(150*time.Millisecond, func() {
+		defer wg.Done()
+	})
 
 	wg.Wait()
+	require.Equal(0, s.queue.Len(), "queue size mismatch")
+	require.Equal(2, counter, "counter mismatch")
 }

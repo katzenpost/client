@@ -1,4 +1,4 @@
-// scheduler.go - mixnet client scheduler
+// scheduler.go - mixnet client priority queue backed scheduler
 // Copyright (C) 2017  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package scheduler for scheduling tasks in the future
 package scheduler
 
 import (
@@ -24,37 +23,45 @@ import (
 	"github.com/katzenpost/core/queue"
 )
 
-type Scheduler struct {
+type PriorityScheduler struct {
 	queue          *queue.PriorityQueue
 	payloadHandler func([]byte)
 	timer          *time.Timer
 }
 
-func New(payloadHandler func([]byte)) *Scheduler {
-	s := Scheduler{
+func New(payloadHandler func([]byte)) *PriorityScheduler {
+	s := PriorityScheduler{
 		queue:          queue.New(),
 		payloadHandler: payloadHandler,
 	}
 	return &s
 }
 
-func (s *Scheduler) run() {
+func (s *PriorityScheduler) run() {
 	entry := s.queue.Pop()
 	s.payloadHandler(entry.Value)
+	s.schedule()
 }
 
-func (s *Scheduler) Schedule(duration time.Duration, payload []byte) {
-	now := monotime.Now()
-	priority := now + duration
-	s.queue.Enqueue(uint64(priority), payload)
+func (s *PriorityScheduler) schedule() {
 	entry := s.queue.Peek()
+	if entry == nil {
+		return
+	}
+	now := monotime.Now()
 	if time.Duration(entry.Priority) <= now {
-		_ = s.queue.Pop()
-		s.payloadHandler(entry.Value)
+		s.run()
 	} else {
 		if s.timer != nil {
 			s.timer.Stop()
 		}
 		s.timer = time.AfterFunc(time.Duration(entry.Priority)-now, s.run)
 	}
+}
+
+func (s *PriorityScheduler) Add(duration time.Duration, payload []byte) {
+	now := monotime.Now()
+	priority := now + duration
+	s.queue.Enqueue(uint64(priority), payload)
+	s.schedule()
 }
