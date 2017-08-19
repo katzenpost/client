@@ -50,7 +50,7 @@ func (s *PriorityScheduler) schedule() {
 	}
 	now := monotime.Now()
 	if time.Duration(entry.Priority) <= now {
-		s.run()
+		s.timer = time.AfterFunc(time.Duration(0), s.run)
 	} else {
 		if s.timer != nil {
 			s.timer.Stop()
