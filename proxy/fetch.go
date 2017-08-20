@@ -25,12 +25,14 @@ import (
 	"github.com/katzenpost/core/wire/commands"
 )
 
+// Fetcher fetches messages for a given account identity
 type Fetcher struct {
 	Identity string
 	sequence uint32
 	pool     *session_pool.SessionPool
 }
 
+// Fetch fetches a message
 func (f *Fetcher) Fetch() (uint8, error) {
 	var queueHintSize uint8
 	session, mutex, err := f.pool.Get(account)
@@ -73,30 +75,36 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	return queueHintSize, nil
 }
 
+// processAck is used by our Stop and Wait ARQ to cancel
+// the retransmit timer
 func (f *Fetcher) processAck(ack *commands.MesageACK) error {
 
 	return nil
 }
 
+// processMessage receives a message Block, decrypts it and
+// writes it to our local bolt db for eventual processing.
 func (f *Fetcher) processMessage(message *commands.Message) error {
 
 	return nil
 }
 
+// FetchScheduler is scheduler which is used to periodically
+// fetch messages using a set of fetchers
 type FetchScheduler struct {
 	fetchers []Fetcher
 	sched    *scheduler.PriorityScheduler
 	duration time.Duration
 }
 
-// NewFetchScheduler creates a new FetchScheduler given a slice of identity strings
-// and a duration
+// NewFetchScheduler creates a new FetchScheduler
+// given a slice of identity strings and a duration
 func NewFetchScheduler(fetchers []Fetcher, duration time.Duration) *MessageRetriever {
 	r := MessageRetriever{
 		fetchers: fetchers,
 		duration: duration,
 	}
-	r.sched = scheduler.New(r.handleTask)
+	r.sched = scheduler.New(r.handleFetch)
 	return &r
 }
 
@@ -107,9 +115,13 @@ func (r *FetchScheduler) Start() {
 	}
 }
 
-// handleTask recieves a task from the priority queue backed scheduler
-// and asserts it's a string before passing it to our message retrieval method
-func (r *FetchScheduler) handleTask(task interface{}) {
+// handleFetch is called by the our scheduler when
+// a fetch must be performed. After the fetch, we
+// either schedule an immediate another fetch or a
+// delayed fetch depending if there are more messages left.
+// See "Panoramix Mix Network End-to-end Protocol Specification"
+// https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
+func (r *FetchScheduler) handleFetch(task interface{}) {
 	identity, ok := task.(string)
 	if !ok {
 		log.Error("MessageRetriever got invalid task from priority scheduler.")
