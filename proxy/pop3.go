@@ -26,65 +26,33 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/pop3"
+	"github.com/katzenpost/client/storage/ingress"
 )
 
 // Pop3BackendSession is our boltdb backed implementation
 // of our pop3 BackendSession interface
 type Pop3BackendSession struct {
-	db          *bolt.DB
+	store       *ingress.Store
 	accountName string
 }
 
 // Messages returns a list of messages stored in our
 // bolt database
 func (s Pop3BackendSession) Messages() ([][]byte, error) {
-	messages := [][]byte{}
-	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.accountName))
-		c := b.Cursor()
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			messages = append(messages, v)
-		}
-		return nil
-	}
-	err := s.db.View(transaction)
-	if err != nil {
-		return nil, err
-	}
-	return messages, nil
-}
 
-// deleteMessage deletes a single message from
-// our backing database storage
-func (s Pop3BackendSession) deleteMessage(item int) error {
-	var err error
-	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.accountName))
-		err := b.Delete([]byte(strconv.Itoa(item)))
-		return err
-	}
-	err = s.db.Update(transaction)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // DeleteMessages deletes a list of messages
 func (s Pop3BackendSession) DeleteMessages(items []int) error {
-	for _, x := range items {
-		err := s.deleteMessage(x)
-		if err != nil {
-			return err
-		}
-	}
+	// XXX
 	return nil
 }
 
 // Close closes the session in this case
 // closing our database handle
 func (s Pop3BackendSession) Close() error {
-	return s.db.Close()
+	// XXX
+	return nil
 }
 
 // Pop3Backend implements our pop3 Backend interface
@@ -138,11 +106,7 @@ func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) 
 		}
 		return nil
 	}
-	db, err := bolt.Open(b.dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
-	if err != nil {
-		return nil, err
-	}
-	err = db.View(transaction)
+	err = b.db.View(transaction)
 	if err != nil {
 		return nil, fmt.Errorf("invalid POP3 user name: '%s'", user)
 	}
@@ -155,14 +119,14 @@ func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) 
 // Pop3Service is a pop3 service which is backed by
 // a local boltdb
 type Pop3Service struct {
-	dbFile string
+	db *bolt.DB
 }
 
 // NewPop3Service creates a new Pop3Service
 // with the given boltdb filename
-func NewPop3Service(dbFile string) *Pop3Service {
+func NewPop3Service(db *bolt.DB) *Pop3Service {
 	p := Pop3Service{
-		dbFile: dbFile,
+		db: *bolt.DB,
 	}
 	return &p
 }
@@ -171,7 +135,7 @@ func NewPop3Service(dbFile string) *Pop3Service {
 // connection to handle a pop3 session
 func (p *Pop3Service) HandleConnection(conn net.Conn) error {
 	defer conn.Close()
-	backend := NewPop3Backend(p.dbFile)
+	backend := NewPop3Backend(p.db)
 	pop3Session := pop3.NewSession(conn, backend)
 	pop3Session.Serve()
 	return nil

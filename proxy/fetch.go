@@ -18,6 +18,7 @@
 package proxy
 
 import (
+	"errors"
 	"time"
 
 	"github.com/katzenpost/client/scheduler"
@@ -32,12 +33,21 @@ type Fetcher struct {
 	pool     *session_pool.SessionPool
 }
 
+func NewFetcher(identity string, pool *session_pool.SessionPool) *Fetcher {
+	fetcher := Fetcher{
+		Identity: identity,
+		sequence: uint32(0),
+		pool:     pool,
+	}
+	return &fetcher
+}
+
 // Fetch fetches a message
 func (f *Fetcher) Fetch() (uint8, error) {
 	var queueHintSize uint8
-	session, mutex, err := f.pool.Get(account)
+	session, mutex, err := f.pool.Get(f.Identity)
 	if err != nil {
-		return err
+		return uint8(0), err
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -55,14 +65,14 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	if ack, ok := recvCmd.(commands.MessageACK); ok {
 		log.Debug("retrieved MessageACK")
 		queueHintSize = ack.QueueSizeHint
-		err := f.processAck(ack)
+		err := f.processAck(&ack)
 		if err != nil {
 			return uint8(0), err
 		}
 	} else if message, ok := recvCmd.(commands.Message); ok {
 		log.Debug("retrieved Message")
 		queueHintSize = message.QueueSizeHint
-		err := f.processMessage(message)
+		err := f.processMessage(&message)
 		if err != nil {
 			return uint8(0), err
 		}
@@ -71,13 +81,13 @@ func (f *Fetcher) Fetch() (uint8, error) {
 		log.Debug(err)
 		return uint8(0), err
 	}
-	r.sequences[account] += 1
+	f.sequence += 1
 	return queueHintSize, nil
 }
 
 // processAck is used by our Stop and Wait ARQ to cancel
 // the retransmit timer
-func (f *Fetcher) processAck(ack *commands.MesageACK) error {
+func (f *Fetcher) processAck(ack *commands.MessageACK) error {
 
 	return nil
 }
@@ -92,26 +102,26 @@ func (f *Fetcher) processMessage(message *commands.Message) error {
 // FetchScheduler is scheduler which is used to periodically
 // fetch messages using a set of fetchers
 type FetchScheduler struct {
-	fetchers []Fetcher
+	fetchers map[string]*Fetcher
 	sched    *scheduler.PriorityScheduler
 	duration time.Duration
 }
 
 // NewFetchScheduler creates a new FetchScheduler
 // given a slice of identity strings and a duration
-func NewFetchScheduler(fetchers []Fetcher, duration time.Duration) *MessageRetriever {
-	r := MessageRetriever{
+func NewFetchScheduler(fetchers map[string]*Fetcher, duration time.Duration) *FetchScheduler {
+	s := FetchScheduler{
 		fetchers: fetchers,
 		duration: duration,
 	}
-	r.sched = scheduler.New(r.handleFetch)
-	return &r
+	s.sched = scheduler.New(s.handleFetch)
+	return &s
 }
 
 // Start starts our periodic message checking scheduler
-func (r *FetchScheduler) Start() {
-	for _, fetcher := range r.fetchers {
-		r.sched.Add(r.duration, fetcher.Identity)
+func (s *FetchScheduler) Start() {
+	for _, fetcher := range s.fetchers {
+		s.sched.Add(s.duration, fetcher.Identity)
 	}
 }
 
@@ -121,21 +131,27 @@ func (r *FetchScheduler) Start() {
 // delayed fetch depending if there are more messages left.
 // See "Panoramix Mix Network End-to-end Protocol Specification"
 // https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
-func (r *FetchScheduler) handleFetch(task interface{}) {
+func (s *FetchScheduler) handleFetch(task interface{}) {
 	identity, ok := task.(string)
 	if !ok {
 		log.Error("MessageRetriever got invalid task from priority scheduler.")
 		return
 	}
-	queueSizeHint, err := fetchers[identity].Fetch()
+	fetcher, ok := s.fetchers[identity]
+	if !ok {
+		err := errors.New("fetcher identity not found")
+		log.Error(err)
+		return
+	}
+	queueSizeHint, err := fetcher.Fetch()
 	if err != nil {
 		log.Error(err)
 		return
 	}
 	if queueSizeHint == 0 {
-		r.sched.Add(r.duration, identity)
+		s.sched.Add(s.duration, identity)
 	} else {
-		r.sched.Add(time.Duration(0), identity)
+		s.sched.Add(time.Duration(0), identity)
 	}
 	return
 }
