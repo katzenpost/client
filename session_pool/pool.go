@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
@@ -35,6 +36,7 @@ var log = logging.MustGetLogger("mixclient")
 // wire protocol session with the Provider
 type SessionPool struct {
 	sessions map[string]*wire.Session
+	locks    map[string]*sync.Mutex
 }
 
 // New creates a new SessionPool
@@ -78,12 +80,21 @@ func New(accounts *config.AccountsMap, config *config.Config, providerAuthentica
 
 func (s *SessionPool) Add(identity string, session *wire.Session) {
 	s.sessions[identity] = session
+	s.locks[identity] = &sync.Mutex{}
 }
 
-func (s *SessionPool) Get(identity string) (*wire.Session, error) {
+func (s *SessionPool) Get(identity string) (*wire.Session, *sync.Mutex, error) {
 	v, ok := s.sessions[identity]
 	if !ok {
-		return nil, errors.New("wire protocol session pool key not found")
+		return nil, nil, errors.New("wire protocol session pool key not found")
 	}
-	return v, nil
+	return v, s.locks[identity], nil
+}
+
+func (s *SessionPool) Identities() []string {
+	ids := []string{}
+	for id, _ := range s.sessions {
+		ids = append(ids, id)
+	}
+	return ids
 }
