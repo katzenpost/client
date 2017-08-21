@@ -69,6 +69,8 @@ func (s *Store) CreateAccountBuckets(accounts []string) error {
 	return nil
 }
 
+// Put puts an message fragment ciphertext, a Block,
+// into the corresponding blocks bucket for that account
 func (o *Store) Put(accountName string, payload []byte) error {
 	transaction := func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_blocks", accountName)))
