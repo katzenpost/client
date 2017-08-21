@@ -23,6 +23,7 @@ import (
 
 	"github.com/katzenpost/client/scheduler"
 	"github.com/katzenpost/client/session_pool"
+	"github.com/katzenpost/client/storage/ingress"
 	"github.com/katzenpost/core/wire/commands"
 )
 
@@ -31,13 +32,15 @@ type Fetcher struct {
 	Identity string
 	sequence uint32
 	pool     *session_pool.SessionPool
+	store    *ingress.Store
 }
 
-func NewFetcher(identity string, pool *session_pool.SessionPool) *Fetcher {
+func NewFetcher(identity string, pool *session_pool.SessionPool, store *ingress.Store) *Fetcher {
 	fetcher := Fetcher{
 		Identity: identity,
 		sequence: uint32(0),
 		pool:     pool,
+		store:    store,
 	}
 	return &fetcher
 }
@@ -58,6 +61,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	if err != nil {
 		return uint8(0), err
 	}
+	rSeq := uint32(0)
 	recvCmd, err := session.RecvCommand()
 	if err != nil {
 		return uint8(0), err
@@ -65,19 +69,26 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	if ack, ok := recvCmd.(commands.MessageACK); ok {
 		log.Debug("retrieved MessageACK")
 		queueHintSize = ack.QueueSizeHint
-		err := f.processAck(&ack)
+		rSeq = ack.Sequence
+		err := f.processAck(ack.Payload)
 		if err != nil {
 			return uint8(0), err
 		}
 	} else if message, ok := recvCmd.(commands.Message); ok {
 		log.Debug("retrieved Message")
 		queueHintSize = message.QueueSizeHint
-		err := f.processMessage(&message)
+		rSeq = message.Sequence
+		err := f.processMessage(message.Payload)
 		if err != nil {
 			return uint8(0), err
 		}
 	} else {
 		err := errors.New("retrieved non-Message/MessageACK wire protocol command")
+		log.Debug(err)
+		return uint8(0), err
+	}
+	if rSeq != f.sequence {
+		err := errors.New("received sequence mismatch")
 		log.Debug(err)
 		return uint8(0), err
 	}
@@ -87,16 +98,14 @@ func (f *Fetcher) Fetch() (uint8, error) {
 
 // processAck is used by our Stop and Wait ARQ to cancel
 // the retransmit timer
-func (f *Fetcher) processAck(ack *commands.MessageACK) error {
-
-	return nil
+func (f *Fetcher) processAck(payload []byte) error {
+	return f.store.Put(f.Identity, payload)
 }
 
 // processMessage receives a message Block, decrypts it and
 // writes it to our local bolt db for eventual processing.
-func (f *Fetcher) processMessage(message *commands.Message) error {
-
-	return nil
+func (f *Fetcher) processMessage(payload []byte) error {
+	return f.store.Put(f.Identity, payload)
 }
 
 // FetchScheduler is scheduler which is used to periodically

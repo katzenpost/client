@@ -18,8 +18,8 @@ package ingress
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
@@ -42,12 +42,56 @@ func New(dbFile string) (*Store, error) {
 	return &s, nil
 }
 
+// CreateAccountBuckets is used to create a set of storage account buckets
+// that will store received messages
+func (s *Store) CreateAccountBuckets(accounts []string) error {
+	for _, accountName := range accounts {
+		// bucket for blocks, message fragment ciphertext
+		transaction := func(tx *bolt.Tx) error {
+			_, err := tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_blocks", accountName)))
+			return err
+		}
+		err := s.db.Update(transaction)
+		if err != nil {
+			return err
+		}
+
+		// bucket for pop3, assembled messages
+		transaction = func(tx *bolt.Tx) error {
+			_, err := tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_pop3", accountName)))
+			return err
+		}
+		err = s.db.Update(transaction)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (o *Store) Put(accountName string, payload []byte) error {
+	transaction := func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_blocks", accountName)))
+		if bucket == nil {
+			return fmt.Errorf("ingress store put failure: bucket not found: %s", accountName)
+		}
+		seq, err := bucket.NextSequence()
+		if err != nil {
+			return err
+		}
+		err = bucket.Put([]byte(strconv.Itoa(int(seq))), payload)
+		return err
+	}
+	err := o.db.Update(transaction)
+	return err
+}
+
 // Messages returns a list of messages stored in our
 // bolt database
 func (s *Store) Messages(accountName string) ([][]byte, error) {
 	messages := [][]byte{}
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(accountName))
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
 		if b == nil {
 			return errors.New("boltdb bucket for that account doesn't exist")
 		}
@@ -69,7 +113,7 @@ func (s *Store) Messages(accountName string) ([][]byte, error) {
 func (s *Store) deleteMessage(accountName string, item int) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(accountName))
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
 		err := b.Delete([]byte(strconv.Itoa(item)))
 		return err
 	}
@@ -84,29 +128,6 @@ func (s *Store) deleteMessage(accountName string, item int) error {
 func (s *Store) DeleteMessages(accountName string, items []int) error {
 	for _, x := range items {
 		err := s.deleteMessage(accountName, x)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// createAccountBucket uses the given db handle and account name
-// to create a boltdb storage bucket
-func (s *Store) createAccountBucket(accountName string) error {
-	transaction := func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(accountName))
-		return err
-	}
-	err := s.db.Update(transaction)
-	return err
-}
-
-// CreateAccountBuckets is used to create a set of storage account buckets
-// that will store received messages
-func (s *Store) CreateAccountBuckets(accounts []string) error {
-	for _, accountName := range accounts {
-		err := s.createAccountBucket(strings.ToLower(accountName))
 		if err != nil {
 			return err
 		}
