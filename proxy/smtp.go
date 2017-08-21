@@ -29,9 +29,9 @@ import (
 	"github.com/katzenpost/client/config"
 	clientconstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
-	"github.com/katzenpost/client/outgoing_queue"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/session_pool"
+	"github.com/katzenpost/client/storage/egress"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
@@ -179,11 +179,11 @@ type SubmitProxy struct {
 
 	whitelist []string
 
-	outgoingStore *outgoing_queue.OutgoingStore
+	outgoingStore *egress.OutgoingStore
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, outgoingStore *outgoing_queue.OutgoingStore) *SubmitProxy {
+func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, outgoingStore *egress.OutgoingStore) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		accounts:      accounts,
 		randomReader:  randomReader,
@@ -250,7 +250,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		}
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
-		storageBlock := outgoing_queue.StorageBlock{
+		storageBlock := egress.StorageBlock{
 			SenderProvider:    senderProvider,
 			RecipientProvider: recipientProvider,
 			RecipientID:       &recipientID,

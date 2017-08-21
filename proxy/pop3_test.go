@@ -27,6 +27,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/storage/ingress"
 	"github.com/stretchr/testify/require"
 )
 
@@ -111,7 +112,9 @@ func TestPop3Basics(t *testing.T) {
 	err = setupPop3Db(dbFile.Name(), testUser)
 	require.NoError(err, "unexpected setupPop3Db error")
 
-	pop3 := NewPop3Service(dbFile.Name())
+	store, err := ingress.New(dbFile.Name())
+	require.NoError(err, "unexpected ingress.New error")
+	pop3 := NewPop3Service(store)
 
 	serverConn, clientConn := net.Pipe()
 	var wg sync.WaitGroup

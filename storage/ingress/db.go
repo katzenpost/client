@@ -17,6 +17,10 @@
 package ingress
 
 import (
+	"errors"
+	"strconv"
+	"strings"
+
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
 )
@@ -28,7 +32,7 @@ type Store struct {
 }
 
 // NewStore returns a new *Store or an error
-func NewStore(dbFile string) (*Store, error) {
+func New(dbFile string) (*Store, error) {
 	var err error
 	s := Store{}
 	s.db, err = bolt.Open(dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
@@ -40,10 +44,10 @@ func NewStore(dbFile string) (*Store, error) {
 
 // Messages returns a list of messages stored in our
 // bolt database
-func (s *Store) Messages() ([][]byte, error) {
+func (s *Store) Messages(accountName string) ([][]byte, error) {
 	messages := [][]byte{}
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.accountName))
+		b := tx.Bucket([]byte(accountName))
 		if b == nil {
 			return errors.New("boltdb bucket for that account doesn't exist")
 		}
@@ -62,11 +66,10 @@ func (s *Store) Messages() ([][]byte, error) {
 
 // deleteMessage deletes a single message from
 // our backing database storage
-func (s *Store) deleteMessage(item int) error {
+func (s *Store) deleteMessage(accountName string, item int) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.accountName))
-
+		b := tx.Bucket([]byte(accountName))
 		err := b.Delete([]byte(strconv.Itoa(item)))
 		return err
 	}
@@ -78,9 +81,32 @@ func (s *Store) deleteMessage(item int) error {
 }
 
 // DeleteMessages deletes a list of messages
-func (s *Store) DeleteMessages(items []int) error {
+func (s *Store) DeleteMessages(accountName string, items []int) error {
 	for _, x := range items {
-		err := s.deleteMessage(x)
+		err := s.deleteMessage(accountName, x)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createAccountBucket uses the given db handle and account name
+// to create a boltdb storage bucket
+func (s *Store) createAccountBucket(accountName string) error {
+	transaction := func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(accountName))
+		return err
+	}
+	err := s.db.Update(transaction)
+	return err
+}
+
+// CreateAccountBuckets is used to create a set of storage account buckets
+// that will store received messages
+func (s *Store) CreateAccountBuckets(accounts []string) error {
+	for _, accountName := range accounts {
+		err := s.createAccountBucket(strings.ToLower(accountName))
 		if err != nil {
 			return err
 		}
