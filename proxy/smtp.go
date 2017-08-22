@@ -238,8 +238,8 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		return err
 	}
 	handler := block.NewHandler(senderKey, rand.Reader)
-	for _, block := range blocks {
-		blockCiphertext := handler.Encrypt(receiverKey, block)
+	for _, b := range blocks {
+		blockCiphertext := handler.Encrypt(receiverKey, b)
 		_, senderProvider, err := config.SplitEmail(sender)
 		if err != nil {
 			return err
