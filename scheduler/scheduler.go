@@ -23,12 +23,15 @@ import (
 	"github.com/katzenpost/core/queue"
 )
 
+// PriorityScheduler is a priority queue backed scheduler
 type PriorityScheduler struct {
 	queue       *queue.PriorityQueue
 	taskHandler func(interface{})
 	timer       *time.Timer
 }
 
+// New creates a new PriorityScheduler given a taskHandler function
+// which is eventually responsible for dealing with the scheduled items
 func New(taskHandler func(interface{})) *PriorityScheduler {
 	s := PriorityScheduler{
 		queue:       queue.New(),
@@ -37,12 +40,18 @@ func New(taskHandler func(interface{})) *PriorityScheduler {
 	return &s
 }
 
+// run causes the lowest priority task
+// to be processes before scheduling
+// the handling of the next scheduled task
 func (s *PriorityScheduler) run() {
 	entry := s.queue.Pop()
 	s.taskHandler(entry.Value)
 	s.schedule()
 }
 
+// schedule schedules the handling of the lowest
+// priority item. Queue priority is compared to
+// current monotime.
 func (s *PriorityScheduler) schedule() {
 	entry := s.queue.Peek()
 	if entry == nil {
@@ -59,6 +68,7 @@ func (s *PriorityScheduler) schedule() {
 	}
 }
 
+// Add adds a task to the scheduler
 func (s *PriorityScheduler) Add(duration time.Duration, task interface{}) {
 	now := monotime.Now()
 	priority := now + duration
