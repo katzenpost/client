@@ -62,6 +62,12 @@ func TestDBBasics(t *testing.T) {
 	surbs, err := store.GetKeys()
 	require.NoError(err, "unexpected GetKeys() error")
 
+	for _, surb := range surbs {
+		message, err := store.Get(&surb)
+		require.NoError(err, "unexpected Get error")
+		t.Log(string(message))
+	}
+
 	err = store.Remove(&surbs[0])
 	require.NoError(err, "unexpected Remove() error")
 

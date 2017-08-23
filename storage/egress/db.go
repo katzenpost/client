@@ -176,6 +176,23 @@ func (o *OutgoingStore) GetKeys() ([][sphinxconstants.SURBIDLength]byte, error) 
 	return keys, nil
 }
 
+func (o *OutgoingStore) Get(surbID *[sphinxconstants.SURBIDLength]byte) ([]byte, error) {
+	var err error
+	ret := []byte{}
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		v := b.Get(surbID[:])
+		ret = make([]byte, len(v))
+		copy(ret, v)
+		return err
+	}
+	err = o.db.View(transaction)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
 // Remove removes a specific *StorageBlock from our db
 // specified by the SURB ID
 func (o *OutgoingStore) Remove(surbID *[sphinxconstants.SURBIDLength]byte) error {
