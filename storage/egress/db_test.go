@@ -21,6 +21,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
@@ -40,11 +41,16 @@ func TestDBBasics(t *testing.T) {
 	rid := []byte{1, 2, 3, 4}
 	recipientID := [constants.RecipientIDLength]byte{}
 	copy(recipientID[:], rid)
+	b := block.Block{
+		TotalBlocks: uint16(1),
+		BlockID:     uint16(1),
+		Block:       []byte(`"The time has come," the Walrus said`),
+	}
 	s := StorageBlock{
 		SenderProvider:    "acme.com",
 		RecipientProvider: "nsa.gov",
 		RecipientID:       &recipientID,
-		Payload:           []byte(`"The time has come," the Walrus said`),
+		Block:             &b,
 	}
 	id := []byte{1, 2, 3, 4, 5, 6}
 	surbID := [constants.SURBIDLength]byte{}

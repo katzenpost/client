@@ -34,7 +34,6 @@ import (
 	"github.com/katzenpost/client/storage/egress"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/rand"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
@@ -229,17 +228,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 	if err != nil {
 		return err
 	}
-	senderKey, err := p.accounts.GetIdentityKey(sender)
-	if err != nil {
-		return err
-	}
-	receiverKey, err := p.userPKI.GetKey(receiver)
-	if err != nil {
-		return err
-	}
-	handler := block.NewHandler(senderKey, rand.Reader)
 	for _, b := range blocks {
-		blockCiphertext := handler.Encrypt(receiverKey, b)
 		_, senderProvider, err := config.SplitEmail(sender)
 		if err != nil {
 			return err
@@ -254,7 +243,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 			SenderProvider:    senderProvider,
 			RecipientProvider: recipientProvider,
 			RecipientID:       &recipientID,
-			Payload:           blockCiphertext,
+			Block:             b,
 		}
 		err = p.outgoingStore.Push(&storageBlock)
 		if err != nil {

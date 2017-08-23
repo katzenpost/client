@@ -22,6 +22,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/core/crypto/rand"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 )
@@ -36,7 +37,7 @@ type StorageBlock struct {
 	SenderProvider    string
 	RecipientProvider string
 	RecipientID       *[sphinxconstants.RecipientIDLength]byte
-	Payload           []byte
+	Block             *block.Block
 }
 
 // JsonStorageBlock is a json serializable representation of StorageBlock
@@ -44,19 +45,19 @@ type JsonStorageBlock struct {
 	SenderProvider    string
 	RecipientProvider string
 	RecipientID       string
-	Payload           string
+	JsonBlock         *block.JsonBlock
 }
 
 // StorageBlock method returns a *StorageBlock or error
 // given the JsonStorageBlock receiver struct
-func (j *JsonStorageBlock) StorageBlock() (*StorageBlock, error) {
+func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 	id, err := base64.StdEncoding.DecodeString(j.RecipientID)
 	if err != nil {
 		return nil, err
 	}
 	recipientID := [sphinxconstants.RecipientIDLength]byte{}
 	copy(recipientID[:], id)
-	payload, err := base64.StdEncoding.DecodeString(j.Payload)
+	b, err := j.JsonBlock.ToBlock()
 	if err != nil {
 		return nil, err
 	}
@@ -64,27 +65,27 @@ func (j *JsonStorageBlock) StorageBlock() (*StorageBlock, error) {
 		SenderProvider:    j.SenderProvider,
 		RecipientProvider: j.RecipientProvider,
 		RecipientID:       &recipientID,
-		Payload:           payload,
+		Block:             b,
 	}
 	return &s, nil
 }
 
 // JsonStorageBlock returns a *JsonStorageBlock
 // given the StorageBlock receiver struct
-func (s *StorageBlock) JsonStorageBlock() *JsonStorageBlock {
+func (s *StorageBlock) ToJsonStorageBlock() *JsonStorageBlock {
 	j := JsonStorageBlock{
 		SenderProvider:    s.SenderProvider,
 		RecipientProvider: s.RecipientProvider,
 		RecipientID:       base64.StdEncoding.EncodeToString(s.RecipientID[:]),
-		Payload:           base64.StdEncoding.EncodeToString(s.Payload),
+		JsonBlock:         s.Block.ToJsonBlock(),
 	}
 	return &j
 }
 
 // Bytes returns the given StorageBlock receiver struct
 // into a byte slice of json
-func (s *StorageBlock) Bytes() ([]byte, error) {
-	j := s.JsonStorageBlock()
+func (s *StorageBlock) ToBytes() ([]byte, error) {
+	j := s.ToJsonStorageBlock()
 	return json.Marshal(j)
 }
 
@@ -96,7 +97,7 @@ func FromBytes(raw []byte) (*StorageBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := j.StorageBlock()
+	s, err := j.ToStorageBlock()
 	return s, err
 }
 
@@ -144,7 +145,7 @@ func (o *OutgoingStore) Put(surbID *[sphinxconstants.SURBIDLength]byte, b *Stora
 		if err != nil {
 			return err
 		}
-		value, err := b.Bytes()
+		value, err := b.ToBytes()
 		if err != nil {
 			return err
 		}
