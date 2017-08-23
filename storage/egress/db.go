@@ -159,7 +159,7 @@ func (o *OutgoingStore) Put(surbID *[sphinxconstants.SURBIDLength]byte, b *Stora
 // GetKeys returns all the keys currently in the database
 func (o *OutgoingStore) GetKeys() ([][sphinxconstants.SURBIDLength]byte, error) {
 	keys := [][sphinxconstants.SURBIDLength]byte{}
-	err := o.db.View(func(tx *bolt.Tx) error {
+	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		c := b.Cursor()
 		for k, _ := c.First(); k != nil; k, _ = c.Next() {
@@ -168,7 +168,8 @@ func (o *OutgoingStore) GetKeys() ([][sphinxconstants.SURBIDLength]byte, error) 
 			keys = append(keys, surbid)
 		}
 		return nil
-	})
+	}
+	err := o.db.View(transaction)
 	if err != nil {
 		return nil, err
 	}
