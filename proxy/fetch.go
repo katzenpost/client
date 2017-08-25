@@ -1,4 +1,4 @@
-// retrieve_messages.go - client message retrieval
+// fetch.go - client message retrieval
 // Copyright (C) 2017  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -143,7 +143,7 @@ func (s *FetchScheduler) Start() {
 func (s *FetchScheduler) handleFetch(task interface{}) {
 	identity, ok := task.(string)
 	if !ok {
-		log.Error("MessageRetriever got invalid task from priority scheduler.")
+		log.Error("FetchScheduler got invalid task from priority scheduler.")
 		return
 	}
 	fetcher, ok := s.fetchers[identity]

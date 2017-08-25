@@ -243,8 +243,11 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 	return forwardPath, replyPath, surbID, nil
 }
 
-func (r *RouteFactory) Build(senderProviderName,
-	recipientProviderName string,
+// Build builds forward and reply paths
+// an error is returned if the path selection has failed
+// due to mix routing keys not being available for the
+// selected delays. We give up after four tries and return an error.
+func (r *RouteFactory) Build(senderProvider, recipientProvider string,
 	recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
 
 	var err error = nil
@@ -253,7 +256,7 @@ func (r *RouteFactory) Build(senderProviderName,
 	var surbID *[constants.SURBIDLength]byte
 
 	for i := 0; i < 4; i++ {
-		forwardPath, replyPath, surbID, err = r.next(senderProviderName, recipientProviderName, recipientID)
+		forwardPath, replyPath, surbID, err = r.next(senderProvider, recipientProvider, recipientID)
 		if err == nil {
 			break
 		}

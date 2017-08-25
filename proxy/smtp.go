@@ -178,16 +178,18 @@ type SubmitProxy struct {
 
 	whitelist []string
 
-	outgoingStore *egress.OutgoingStore
+	store *egress.Store
+
+	senders map[string]*Sender
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, outgoingStore *egress.OutgoingStore) *SubmitProxy {
+func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *egress.Store) *SubmitProxy {
 	submissionProxy := SubmitProxy{
-		accounts:      accounts,
-		randomReader:  randomReader,
-		userPKI:       userPki,
-		outgoingStore: outgoingStore,
+		accounts:     accounts,
+		randomReader: randomReader,
+		userPKI:      userPki,
+		store:        store,
 		whitelist: []string{ // XXX yawning fix me
 			"To",
 			"From",
@@ -241,20 +243,22 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		copy(recipientID[:], recipientUser)
 		storageBlock := egress.StorageBlock{
 			SenderProvider:    senderProvider,
-			RecipientProvider: recipientProvider,
+			Recipient:         receiver,
 			RecipientID:       &recipientID,
+			RecipientProvider: recipientProvider,
+			SendAttempts:      uint8(0),
 			Block:             b,
 		}
-		err = p.outgoingStore.Push(&storageBlock)
+		blockID, err := p.store.Put(&storageBlock)
 		if err != nil {
 			return err
 		}
+		p.senders[sender].Send(blockID, &storageBlock)
 	}
 	return nil
 }
 
 // handleSMTPSubmission handles the SMTP submissions
-// and proxies them to the mix network.
 func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	logWriter := newLogWriter(log)

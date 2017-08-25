@@ -18,25 +18,31 @@ package egress
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
-	"github.com/katzenpost/core/crypto/rand"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 )
 
 const (
-	bucketName = "outgoing"
+	bucketName    = "outgoing"
+	BlockIDLength = 8
 )
 
 // StorageBlock contains an encrypted message fragment
 // and other fields needed to send it to the destination
 type StorageBlock struct {
 	SenderProvider    string
+	Recipient         string
 	RecipientProvider string
 	RecipientID       *[sphinxconstants.RecipientIDLength]byte
+	SendAttempts      uint8
+	SurbKeys          []byte
+	SURBID            *[sphinxconstants.SURBIDLength]byte
 	Block             *block.Block
 }
 
@@ -45,6 +51,7 @@ type JsonStorageBlock struct {
 	SenderProvider    string
 	RecipientProvider string
 	RecipientID       string
+	SendAttempts      int
 	JsonBlock         *block.JsonBlock
 }
 
@@ -65,6 +72,7 @@ func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 		SenderProvider:    j.SenderProvider,
 		RecipientProvider: j.RecipientProvider,
 		RecipientID:       &recipientID,
+		SendAttempts:      uint8(j.SendAttempts),
 		Block:             b,
 	}
 	return &s, nil
@@ -77,6 +85,7 @@ func (s *StorageBlock) ToJsonStorageBlock() *JsonStorageBlock {
 		SenderProvider:    s.SenderProvider,
 		RecipientProvider: s.RecipientProvider,
 		RecipientID:       base64.StdEncoding.EncodeToString(s.RecipientID[:]),
+		SendAttempts:      int(s.SendAttempts),
 		JsonBlock:         s.Block.ToJsonBlock(),
 	}
 	return &j
@@ -101,15 +110,15 @@ func FromBytes(raw []byte) (*StorageBlock, error) {
 	return s, err
 }
 
-// OutgoingStore handles getting and putting message fragments
+// Store handles getting and putting message fragments
 // in our persistent db store
-type OutgoingStore struct {
+type Store struct {
 	db *bolt.DB
 }
 
-// New returns a new *OutgoingStore or an error
-func New(dbname string) (*OutgoingStore, error) {
-	o := OutgoingStore{}
+// New returns a new *Store or an error
+func New(dbname string) (*Store, error) {
+	o := Store{}
 	var err error
 	o.db, err = bolt.Open(dbname, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
 	if err != nil {
@@ -118,28 +127,16 @@ func New(dbname string) (*OutgoingStore, error) {
 	return &o, nil
 }
 
-// Close closes our OutgoingStore database
-func (o *OutgoingStore) Close() error {
+// Close closes our Store database
+func (o *Store) Close() error {
 	err := o.db.Close()
 	return err
 }
 
-// Push pushes a given StorageBlock into our database,
-// assigning it a random SURB ID for use as it's key
-func (o *OutgoingStore) Push(b *StorageBlock) error {
-	surbID := [sphinxconstants.SURBIDLength]byte{}
-	_, err := rand.Reader.Read(surbID[:])
-	if err != nil {
-		return err
-	}
-	err = o.Put(&surbID, b)
-	return err
-}
-
-// Put puts a given *StorageBlock into our db with the given surbID
-// as it's lookup key
-func (o *OutgoingStore) Put(surbID *[sphinxconstants.SURBIDLength]byte, b *StorageBlock) error {
-	var err error
+// Put puts a given StorageBlock into our db
+// and returns a block ID which is it's key
+func (o *Store) Put(b *StorageBlock) (*[BlockIDLength]byte, error) {
+	blockID := [BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 		if err != nil {
@@ -149,23 +146,51 @@ func (o *OutgoingStore) Put(surbID *[sphinxconstants.SURBIDLength]byte, b *Stora
 		if err != nil {
 			return err
 		}
-		err = bucket.Put(surbID[:], value)
+		// Generate ID for the StorageBlock.
+		// This returns an error only if the Tx is closed or not writeable.
+		// That can't happen in an Update() call so I ignore the error check.
+		id, _ := bucket.NextSequence()
+		binary.BigEndian.PutUint64(blockID[:], id)
+		err = bucket.Put(blockID[:], value)
 		return err
 	}
-	err = o.db.Update(transaction)
+	err := o.db.Update(transaction)
+	if err != nil {
+		return nil, err
+	}
+	return &blockID, nil
+}
+
+func (o *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
+	transaction := func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(bucketName))
+		if bucket == nil {
+			return errors.New("Update failed to get the bucket")
+		}
+		value, err := b.ToBytes()
+		if err != nil {
+			return err
+		}
+		err = bucket.Put(blockID[:], value)
+		return err
+	}
+	err := o.db.Update(transaction)
 	return err
 }
 
 // GetKeys returns all the keys currently in the database
-func (o *OutgoingStore) GetKeys() ([][sphinxconstants.SURBIDLength]byte, error) {
-	keys := [][sphinxconstants.SURBIDLength]byte{}
+func (o *Store) GetKeys() ([][BlockIDLength]byte, error) {
+	keys := [][BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
+		if b == nil {
+			return errors.New("GetKeys failed to get the bucket")
+		}
 		c := b.Cursor()
 		for k, _ := c.First(); k != nil; k, _ = c.Next() {
-			surbid := [sphinxconstants.SURBIDLength]byte{}
-			copy(surbid[:], k)
-			keys = append(keys, surbid)
+			blockid := [BlockIDLength]byte{}
+			copy(blockid[:], k)
+			keys = append(keys, blockid)
 		}
 		return nil
 	}
@@ -176,12 +201,12 @@ func (o *OutgoingStore) GetKeys() ([][sphinxconstants.SURBIDLength]byte, error) 
 	return keys, nil
 }
 
-func (o *OutgoingStore) Get(surbID *[sphinxconstants.SURBIDLength]byte) ([]byte, error) {
+func (o *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 	var err error
 	ret := []byte{}
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
-		v := b.Get(surbID[:])
+		v := b.Get(blockID[:])
 		ret = make([]byte, len(v))
 		copy(ret, v)
 		return err
@@ -195,11 +220,11 @@ func (o *OutgoingStore) Get(surbID *[sphinxconstants.SURBIDLength]byte) ([]byte,
 
 // Remove removes a specific *StorageBlock from our db
 // specified by the SURB ID
-func (o *OutgoingStore) Remove(surbID *[sphinxconstants.SURBIDLength]byte) error {
+func (o *Store) Remove(blockID *[BlockIDLength]byte) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
-		err := b.Delete(surbID[:])
+		err := b.Delete(blockID[:])
 		return err
 	}
 
