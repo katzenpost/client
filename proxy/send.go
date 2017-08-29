@@ -50,6 +50,9 @@ func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storag
 	storageBlock.SendAttempts += 1
 	storageBlock.SURBID = surbID
 	err = s.store.Update(blockID, storageBlock)
+	if err != nil {
+		return nil, err
+	}
 	sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, append(surb, payload...))
 	if err != nil {
 		return nil, err
@@ -67,6 +70,9 @@ func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.
 	}
 	blockCiphertext := s.handler.Encrypt(receiverKey, storageBlock.Block)
 	cmd, err := s.composeSphinxPacket(blockID, storageBlock, blockCiphertext)
+	if err != nil {
+		return err
+	}
 	session, mutex, err := s.pool.Get(s.identity)
 	if err != nil {
 		return err
@@ -104,5 +110,5 @@ func (s *SendScheduler) handleSend(task interface{}) {
 		log.Error("SendScheduler got invalid task from priority scheduler.")
 		return
 	}
-	senders[storageBlock].Send()
+	s.senders[storageBlock].Send()
 }
