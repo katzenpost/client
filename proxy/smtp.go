@@ -244,10 +244,10 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		storageBlock := egress.StorageBlock{
 			SenderProvider:    senderProvider,
 			Recipient:         receiver,
-			RecipientID:       &recipientID,
+			RecipientID:       recipientID,
 			RecipientProvider: recipientProvider,
 			SendAttempts:      uint8(0),
-			Block:             b,
+			Block:             *b,
 		}
 		blockID, err := p.store.Put(&storageBlock)
 		if err != nil {

@@ -29,52 +29,72 @@ import (
 )
 
 const (
-	bucketName    = "outgoing"
-	BlockIDLength = 8
+	EgressBucketName = "outgoing"
+	BlockIDLength    = 8
 )
 
 // StorageBlock contains an encrypted message fragment
 // and other fields needed to send it to the destination
+// XXX todo: finish this source file... conversion to and from json.
 type StorageBlock struct {
+	BlockID           [BlockIDLength]byte
 	SenderProvider    string
 	Recipient         string
 	RecipientProvider string
-	RecipientID       *[sphinxconstants.RecipientIDLength]byte
+	RecipientID       [sphinxconstants.RecipientIDLength]byte
 	SendAttempts      uint8
-	SurbKeys          []byte
-	SURBID            *[sphinxconstants.SURBIDLength]byte
-	Block             *block.Block
+	SURBKeys          []byte
+	SURBID            [sphinxconstants.SURBIDLength]byte
+	Block             block.Block
 }
 
 // JsonStorageBlock is a json serializable representation of StorageBlock
 type JsonStorageBlock struct {
+	BlockID           string
 	SenderProvider    string
+	Recipient         string
 	RecipientProvider string
 	RecipientID       string
 	SendAttempts      int
+	SURBKeys          string
+	SURBID            string
 	JsonBlock         *block.JsonBlock
 }
 
 // StorageBlock method returns a *StorageBlock or error
 // given the JsonStorageBlock receiver struct
 func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
-	id, err := base64.StdEncoding.DecodeString(j.RecipientID)
+	recipientID, err := base64.StdEncoding.DecodeString(j.RecipientID)
 	if err != nil {
 		return nil, err
 	}
-	recipientID := [sphinxconstants.RecipientIDLength]byte{}
-	copy(recipientID[:], id)
+	blockID, err := base64.StdEncoding.DecodeString(j.BlockID)
+	if err != nil {
+		return nil, err
+	}
+	surbID, err := base64.StdEncoding.DecodeString(j.SURBID)
+	if err != nil {
+		return nil, err
+	}
+	surbKeys, err := base64.StdEncoding.DecodeString(j.SURBKeys)
+	if err != nil {
+		return nil, err
+	}
 	b, err := j.JsonBlock.ToBlock()
 	if err != nil {
 		return nil, err
 	}
 	s := StorageBlock{
 		SenderProvider:    j.SenderProvider,
+		Recipient:         j.Recipient,
 		RecipientProvider: j.RecipientProvider,
-		RecipientID:       &recipientID,
 		SendAttempts:      uint8(j.SendAttempts),
-		Block:             b,
+		Block:             *b,
 	}
+	copy(s.BlockID[:], blockID)
+	copy(s.RecipientID[:], recipientID)
+	copy(s.SURBKeys[:], surbKeys)
+	copy(s.SURBID[:], surbID)
 	return &s, nil
 }
 
@@ -82,10 +102,14 @@ func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 // given the StorageBlock receiver struct
 func (s *StorageBlock) ToJsonStorageBlock() *JsonStorageBlock {
 	j := JsonStorageBlock{
+		BlockID:           base64.StdEncoding.EncodeToString(s.BlockID[:]),
 		SenderProvider:    s.SenderProvider,
+		Recipient:         s.Recipient,
 		RecipientProvider: s.RecipientProvider,
 		RecipientID:       base64.StdEncoding.EncodeToString(s.RecipientID[:]),
 		SendAttempts:      int(s.SendAttempts),
+		SURBKeys:          base64.StdEncoding.EncodeToString(s.SURBKeys[:]),
+		SURBID:            base64.StdEncoding.EncodeToString(s.SURBID[:]),
 		JsonBlock:         s.Block.ToJsonBlock(),
 	}
 	return &j
@@ -138,7 +162,7 @@ func (o *Store) Close() error {
 func (o *Store) Put(b *StorageBlock) (*[BlockIDLength]byte, error) {
 	blockID := [BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
+		bucket, err := tx.CreateBucketIfNotExists([]byte(EgressBucketName))
 		if err != nil {
 			return err
 		}
@@ -163,7 +187,7 @@ func (o *Store) Put(b *StorageBlock) (*[BlockIDLength]byte, error) {
 
 func (o *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
 	transaction := func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(bucketName))
+		bucket := tx.Bucket([]byte(EgressBucketName))
 		if bucket == nil {
 			return errors.New("Update failed to get the bucket")
 		}
@@ -182,7 +206,7 @@ func (o *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
 func (o *Store) GetKeys() ([][BlockIDLength]byte, error) {
 	keys := [][BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketName))
+		b := tx.Bucket([]byte(EgressBucketName))
 		if b == nil {
 			return errors.New("GetKeys failed to get the bucket")
 		}
@@ -205,7 +229,7 @@ func (o *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 	var err error
 	ret := []byte{}
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketName))
+		b := tx.Bucket([]byte(EgressBucketName))
 		v := b.Get(blockID[:])
 		ret = make([]byte, len(v))
 		copy(ret, v)
@@ -223,7 +247,7 @@ func (o *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 func (o *Store) Remove(blockID *[BlockIDLength]byte) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketName))
+		b := tx.Bucket([]byte(EgressBucketName))
 		err := b.Delete(blockID[:])
 		return err
 	}

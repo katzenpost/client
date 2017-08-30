@@ -46,17 +46,16 @@ func TestDBBasics(t *testing.T) {
 		BlockID:     uint16(1),
 		Block:       []byte(`"The time has come," the Walrus said`),
 	}
+	id := []byte{1, 2, 3, 4, 5, 6}
 	s := StorageBlock{
 		SenderProvider:    "acme.com",
 		RecipientProvider: "nsa.gov",
-		RecipientID:       &recipientID,
-		Block:             &b,
+		RecipientID:       recipientID,
+		Block:             b,
 	}
-	id := []byte{1, 2, 3, 4, 5, 6}
-	surbID := [constants.SURBIDLength]byte{}
-	copy(surbID[:], id)
+	copy(s.SURBID[:], id)
 
-	err = store.Put(&surbID, &s)
+	_, err = store.Put(&s)
 	require.NoError(err, "unexpected storeMessage() error")
 
 	surbs, err := store.GetKeys()

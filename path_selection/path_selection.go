@@ -154,7 +154,7 @@ func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, des
 func (r *RouteFactory) newPathVector(till time.Duration,
 	delays []float64,
 	descriptors []*pki.MixDescriptor,
-	recipientID *[constants.RecipientIDLength]byte,
+	recipientID [constants.RecipientIDLength]byte,
 	isSURB bool) ([]*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
 
 	path := make([]*sphinx.PathHop, r.nrHops)
@@ -200,7 +200,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // The generated forward and reply paths are intended to be used
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
-func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
 
 	// 1. Sample all forward and SURB delays.
 	forwardDelays := getDelays(r.lambda, r.nrHops)
@@ -248,7 +248,7 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 // due to mix routing keys not being available for the
 // selected delays. We give up after four tries and return an error.
 func (r *RouteFactory) Build(senderProvider, recipientProvider string,
-	recipientID *[constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+	recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
 
 	var err error = nil
 	var forwardPath []*sphinx.PathHop

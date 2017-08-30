@@ -35,6 +35,7 @@ type Sender struct {
 	routeFactory *path_selection.RouteFactory
 	userPKI      user_pki.UserPKI
 	handler      *block.Handler
+	scheduler    *SendScheduler
 }
 
 func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock, payload []byte) (*commands.SendPacket, error) {
@@ -46,9 +47,9 @@ func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storag
 	if err != nil {
 		return nil, err
 	}
-	storageBlock.SurbKeys = surbKeys
+	storageBlock.SURBKeys = surbKeys
 	storageBlock.SendAttempts += 1
-	storageBlock.SURBID = surbID
+	storageBlock.SURBID = *surbID
 	err = s.store.Update(blockID, storageBlock)
 	if err != nil {
 		return nil, err
@@ -68,7 +69,7 @@ func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.
 	if err != nil {
 		return err
 	}
-	blockCiphertext := s.handler.Encrypt(receiverKey, storageBlock.Block)
+	blockCiphertext := s.handler.Encrypt(receiverKey, &storageBlock.Block)
 	cmd, err := s.composeSphinxPacket(blockID, storageBlock, blockCiphertext)
 	if err != nil {
 		return err
@@ -80,14 +81,20 @@ func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.
 	mutex.Lock()
 	defer mutex.Unlock()
 	err = session.SendCommand(cmd)
-	return err
+	if err != nil {
+		return err
+	}
+	// schedule a resend in the future
+	// (but it can be cancelled if we receive an ACK)
+	s.scheduler.Add(storageBlock)
+	return nil
 }
 
 type SendScheduler struct {
-	sched    *scheduler.PriorityScheduler
-	senders  map[string]*Sender
-	blockIDs []*[egress.BlockIDLength]byte
-	store    *egress.Store
+	sched        *scheduler.PriorityScheduler
+	senders      map[string]*Sender
+	store        *egress.Store
+	cancellation map[[egress.BlockIDLength]byte]bool
 }
 
 func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
@@ -98,10 +105,12 @@ func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
 	return &s
 }
 
-func (s *SendScheduler) Start() {}
+func (s *SendScheduler) Add(storageBlock *egress.StorageBlock) {
+	s.sched.Add(666, storageBlock) // XXX no time for thyme tea
+}
 
-func (s *SendScheduler) Add(blockID *[egress.BlockIDLength]byte) {
-	s.blockIDs = append(s.blockIDs, blockID)
+func (s *SendScheduler) Cancel(blockID *[egress.BlockIDLength]byte) {
+	s.cancellation[*blockID] = true
 }
 
 func (s *SendScheduler) handleSend(task interface{}) {
@@ -110,5 +119,11 @@ func (s *SendScheduler) handleSend(task interface{}) {
 		log.Error("SendScheduler got invalid task from priority scheduler.")
 		return
 	}
-	s.senders[storageBlock].Send()
+	_, ok = s.cancellation[storageBlock.BlockID]
+	if !ok {
+		err := s.senders[storageBlock.Recipient].Send(&storageBlock.BlockID, storageBlock)
+		if err != nil {
+			log.Error(err)
+		}
+	}
 }

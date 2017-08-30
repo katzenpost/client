@@ -41,7 +41,7 @@ func New(taskHandler func(interface{})) *PriorityScheduler {
 }
 
 // run causes the lowest priority task
-// to be processes before scheduling
+// to be processed before scheduling
 // the handling of the next scheduled task
 func (s *PriorityScheduler) run() {
 	entry := s.queue.Pop()
