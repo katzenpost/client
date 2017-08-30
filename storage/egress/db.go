@@ -166,15 +166,17 @@ func (o *Store) Put(b *StorageBlock) (*[BlockIDLength]byte, error) {
 		if err != nil {
 			return err
 		}
-		value, err := b.ToBytes()
-		if err != nil {
-			return err
-		}
 		// Generate ID for the StorageBlock.
 		// This returns an error only if the Tx is closed or not writeable.
 		// That can't happen in an Update() call so I ignore the error check.
 		id, _ := bucket.NextSequence()
 		binary.BigEndian.PutUint64(blockID[:], id)
+		b.BlockID = blockID
+		value, err := b.ToBytes()
+		if err != nil {
+			return err
+		}
+
 		err = bucket.Put(blockID[:], value)
 		return err
 	}
