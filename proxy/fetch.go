@@ -29,10 +29,11 @@ import (
 
 // Fetcher fetches messages for a given account identity
 type Fetcher struct {
-	Identity string
-	sequence uint32
-	pool     *session_pool.SessionPool
-	store    *ingress.Store
+	Identity  string
+	sequence  uint32
+	pool      *session_pool.SessionPool
+	store     *ingress.Store
+	scheduler *SendScheduler
 }
 
 func NewFetcher(identity string, pool *session_pool.SessionPool, store *ingress.Store) *Fetcher {
@@ -45,7 +46,8 @@ func NewFetcher(identity string, pool *session_pool.SessionPool, store *ingress.
 	return &fetcher
 }
 
-// Fetch fetches a message
+// Fetch fetches a message and returns
+// the queue size hint or an error
 func (f *Fetcher) Fetch() (uint8, error) {
 	var queueHintSize uint8
 	session, mutex, err := f.pool.Get(f.Identity)
@@ -99,7 +101,9 @@ func (f *Fetcher) Fetch() (uint8, error) {
 // processAck is used by our Stop and Wait ARQ to cancel
 // the retransmit timer
 func (f *Fetcher) processAck(payload []byte) error {
-	return f.store.Put(f.Identity, payload)
+	// XXX fix me, cancel ARQ retransmit
+	//f.scheduler.Cancel(XXX)
+	return nil
 }
 
 // processMessage receives a message Block, decrypts it and
