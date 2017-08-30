@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/client/scheduler"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage/ingress"
+	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire/commands"
 )
 
@@ -72,7 +73,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 		log.Debug("retrieved MessageACK")
 		queueHintSize = ack.QueueSizeHint
 		rSeq = ack.Sequence
-		err := f.processAck(ack.Payload)
+		err := f.processAck(ack.ID, ack.Payload)
 		if err != nil {
 			return uint8(0), err
 		}
@@ -100,9 +101,8 @@ func (f *Fetcher) Fetch() (uint8, error) {
 
 // processAck is used by our Stop and Wait ARQ to cancel
 // the retransmit timer
-func (f *Fetcher) processAck(payload []byte) error {
-	// XXX fix me, cancel ARQ retransmit
-	//f.scheduler.Cancel(XXX)
+func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) error {
+	f.scheduler.Cancel(id)
 	return nil
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx"
+	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire/commands"
 )
 
@@ -94,7 +95,7 @@ type SendScheduler struct {
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
 	store        *egress.Store
-	cancellation map[[egress.BlockIDLength]byte]bool
+	cancellation map[[constants.SURBIDLength]byte]bool
 }
 
 func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
@@ -109,8 +110,8 @@ func (s *SendScheduler) Add(storageBlock *egress.StorageBlock) {
 	s.sched.Add(666, storageBlock) // XXX no time for thyme tea
 }
 
-func (s *SendScheduler) Cancel(blockID *[egress.BlockIDLength]byte) {
-	s.cancellation[*blockID] = true
+func (s *SendScheduler) Cancel(id [constants.SURBIDLength]byte) {
+	s.cancellation[id] = true
 }
 
 func (s *SendScheduler) handleSend(task interface{}) {
@@ -119,7 +120,7 @@ func (s *SendScheduler) handleSend(task interface{}) {
 		log.Error("SendScheduler got invalid task from priority scheduler.")
 		return
 	}
-	_, ok = s.cancellation[storageBlock.BlockID]
+	_, ok = s.cancellation[storageBlock.SURBID]
 	if !ok {
 		err := s.senders[storageBlock.Recipient].Send(&storageBlock.BlockID, storageBlock)
 		if err != nil {
