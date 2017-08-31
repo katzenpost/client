@@ -171,6 +171,8 @@ type SubmitProxy struct {
 	// userPKI implements the UserPKI interface
 	userPKI user_pki.UserPKI
 
+	store *egress.Store
+
 	// session pool of connections to each provider
 	sessionPool *session_pool.SessionPool
 
@@ -178,18 +180,19 @@ type SubmitProxy struct {
 
 	whitelist []string
 
-	store *egress.Store
-
 	scheduler *SendScheduler
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *egress.Store) *SubmitProxy {
+func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *egress.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		accounts:     accounts,
 		randomReader: randomReader,
 		userPKI:      userPki,
 		store:        store,
+		sessionPool:  pool,
+		routeFactory: routeFactory,
+		scheduler:    scheduler,
 		whitelist: []string{ // XXX yawning fix me
 			"To",
 			"From",

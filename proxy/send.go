@@ -45,6 +45,18 @@ type Sender struct {
 	handler      *block.Handler
 }
 
+func NewSender(identity string, pool *session_pool.SessionPool, store *egress.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) *Sender {
+	s := Sender{
+		identity:     identity,
+		pool:         pool,
+		store:        store,
+		routeFactory: routeFactory,
+		userPKI:      userPKI,
+		handler:      handler,
+	}
+	return &s
+}
+
 // composeSphinxPacket creates a SendPacket wire protocol command with
 // a Sphinx packet and SURB header
 func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
