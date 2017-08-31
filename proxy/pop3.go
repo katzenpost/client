@@ -22,13 +22,13 @@ import (
 	"strings"
 
 	"github.com/katzenpost/client/pop3"
-	"github.com/katzenpost/client/storage/ingress"
+	"github.com/katzenpost/client/storage"
 )
 
 // Pop3BackendSession is our boltdb backed implementation
 // of our pop3 BackendSession interface
 type Pop3BackendSession struct {
-	store       *ingress.Store
+	store       *storage.Store
 	accountName string
 }
 
@@ -53,11 +53,11 @@ func (s Pop3BackendSession) Close() error {
 
 // Pop3Backend implements our pop3 Backend interface
 type Pop3Backend struct {
-	store *ingress.Store
+	store *storage.Store
 }
 
 // NewPop3Backend creates a new Pop3Backend given the db file path
-func NewPop3Backend(store *ingress.Store) Pop3Backend {
+func NewPop3Backend(store *storage.Store) Pop3Backend {
 	p := Pop3Backend{
 		store: store,
 	}
@@ -77,12 +77,12 @@ func (b Pop3Backend) NewSession(user, pass []byte) (pop3.BackendSession, error) 
 // Pop3Service is a pop3 service which is backed by
 // a local boltdb
 type Pop3Service struct {
-	store *ingress.Store
+	store *storage.Store
 }
 
 // NewPop3Service creates a new Pop3Service
 // with the given boltdb filename
-func NewPop3Service(store *ingress.Store) *Pop3Service {
+func NewPop3Service(store *storage.Store) *Pop3Service {
 	s := Pop3Service{
 		store: store,
 	}

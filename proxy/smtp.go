@@ -31,7 +31,7 @@ import (
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/session_pool"
-	"github.com/katzenpost/client/storage/egress"
+	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/constants"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
@@ -171,7 +171,7 @@ type SubmitProxy struct {
 	// userPKI implements the UserPKI interface
 	userPKI user_pki.UserPKI
 
-	store *egress.Store
+	store *storage.Store
 
 	// session pool of connections to each provider
 	sessionPool *session_pool.SessionPool
@@ -184,7 +184,7 @@ type SubmitProxy struct {
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *egress.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
+func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		accounts:     accounts,
 		randomReader: randomReader,
@@ -244,7 +244,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		}
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
-		storageBlock := egress.StorageBlock{
+		storageBlock := storage.StorageBlock{
 			Sender:            sender,
 			SenderProvider:    senderProvider,
 			Recipient:         receiver,
@@ -253,7 +253,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 			SendAttempts:      uint8(0),
 			Block:             *b,
 		}
-		blockID, err := p.store.Put(&storageBlock)
+		blockID, err := p.store.PutEgressBlock(&storageBlock)
 		if err != nil {
 			return err
 		}

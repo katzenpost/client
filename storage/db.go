@@ -1,4 +1,4 @@
-// db.go - durable egress queue
+// db.go - durable storage for ingress and egress messages
 // Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,13 +14,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package egress
+package storage
 
 import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 
 	"github.com/boltdb/bolt"
 	"github.com/katzenpost/client/constants"
@@ -138,32 +140,34 @@ func FromBytes(raw []byte) (*StorageBlock, error) {
 	return s, err
 }
 
-// Store handles getting and putting message fragments
-// in our persistent db store
+// Store is our persistent storage for incoming
+// messages which have been reassembled.
 type Store struct {
 	db *bolt.DB
 }
 
-// New returns a new *Store or an error
-func New(dbname string) (*Store, error) {
-	o := Store{}
+// NewStore returns a new *Store or an error
+func New(dbFile string) (*Store, error) {
 	var err error
-	o.db, err = bolt.Open(dbname, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
+	s := Store{}
+	s.db, err = bolt.Open(dbFile, 0600, &bolt.Options{Timeout: constants.DatabaseConnectTimeout})
 	if err != nil {
 		return nil, err
 	}
-	return &o, nil
+	return &s, nil
 }
 
 // Close closes our Store database
-func (o *Store) Close() error {
-	err := o.db.Close()
+func (s *Store) Close() error {
+	err := s.db.Close()
 	return err
 }
 
+// egress storage
+
 // Put puts a given StorageBlock into our db
 // and returns a block ID which is it's key
-func (o *Store) Put(b *StorageBlock) (*[BlockIDLength]byte, error) {
+func (s *Store) PutEgressBlock(b *StorageBlock) (*[BlockIDLength]byte, error) {
 	blockID := [BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(EgressBucketName))
@@ -184,14 +188,15 @@ func (o *Store) Put(b *StorageBlock) (*[BlockIDLength]byte, error) {
 		err = bucket.Put(blockID[:], value)
 		return err
 	}
-	err := o.db.Update(transaction)
+	err := s.db.Update(transaction)
 	if err != nil {
 		return nil, err
 	}
 	return &blockID, nil
 }
 
-func (o *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
+// Update is used to update a specified storage block
+func (s *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
 	transaction := func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(EgressBucketName))
 		if bucket == nil {
@@ -204,12 +209,12 @@ func (o *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
 		err = bucket.Put(blockID[:], value)
 		return err
 	}
-	err := o.db.Update(transaction)
+	err := s.db.Update(transaction)
 	return err
 }
 
 // GetKeys returns all the keys currently in the database
-func (o *Store) GetKeys() ([][BlockIDLength]byte, error) {
+func (s *Store) GetKeys() ([][BlockIDLength]byte, error) {
 	keys := [][BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(EgressBucketName))
@@ -224,14 +229,14 @@ func (o *Store) GetKeys() ([][BlockIDLength]byte, error) {
 		}
 		return nil
 	}
-	err := o.db.View(transaction)
+	err := s.db.View(transaction)
 	if err != nil {
 		return nil, err
 	}
 	return keys, nil
 }
 
-func (o *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
+func (s *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 	var err error
 	ret := []byte{}
 	transaction := func(tx *bolt.Tx) error {
@@ -241,7 +246,7 @@ func (o *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 		copy(ret, v)
 		return err
 	}
-	err = o.db.View(transaction)
+	err = s.db.View(transaction)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +255,7 @@ func (o *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 
 // Remove removes a specific *StorageBlock from our db
 // specified by the SURB ID
-func (o *Store) Remove(blockID *[BlockIDLength]byte) error {
+func (s *Store) Remove(blockID *[BlockIDLength]byte) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(EgressBucketName))
@@ -258,9 +263,106 @@ func (o *Store) Remove(blockID *[BlockIDLength]byte) error {
 		return err
 	}
 
-	err = o.db.Update(transaction)
+	err = s.db.Update(transaction)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+// ingress storage
+
+// CreateAccountBuckets is used to create a set of storage account buckets
+// that will store received messages
+func (s *Store) CreateAccountBuckets(accounts []string) error {
+	for _, accountName := range accounts {
+		// bucket for blocks, message fragment ciphertext
+		transaction := func(tx *bolt.Tx) error {
+			_, err := tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+			return err
+		}
+		err := s.db.Update(transaction)
+		if err != nil {
+			return err
+		}
+
+		// bucket for pop3, assembled messages
+		transaction = func(tx *bolt.Tx) error {
+			_, err := tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_pop3", accountName)))
+			return err
+		}
+		err = s.db.Update(transaction)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Put puts an message fragment ciphertext, a Block,
+// into the corresponding blocks bucket for that account
+func (s *Store) PutIngressBlock(accountName string, payload []byte) error {
+	transaction := func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+		if bucket == nil {
+			return fmt.Errorf("ingress store put failure: bucket not found: %s", accountName)
+		}
+		seq, err := bucket.NextSequence()
+		if err != nil {
+			return err
+		}
+		err = bucket.Put([]byte(strconv.Itoa(int(seq))), payload)
+		return err
+	}
+	err := s.db.Update(transaction)
+	return err
+}
+
+// Messages returns a list of messages stored in our
+// bolt database
+func (s *Store) Messages(accountName string) ([][]byte, error) {
+	messages := [][]byte{}
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
+		if b == nil {
+			return errors.New("boltdb bucket for that account doesn't exist")
+		}
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			messages = append(messages, v)
+		}
+		return nil
+	}
+	err := s.db.View(transaction)
+	if err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+// deleteMessage deletes a single message from
+// our backing database storage
+func (s *Store) deleteMessage(accountName string, item int) error {
+	var err error
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
+		err := b.Delete([]byte(strconv.Itoa(item)))
+		return err
+	}
+	err = s.db.Update(transaction)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteMessages deletes a list of messages
+func (s *Store) DeleteMessages(accountName string, items []int) error {
+	for _, x := range items {
+		err := s.deleteMessage(accountName, x)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

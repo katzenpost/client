@@ -23,7 +23,7 @@ import (
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/scheduler"
 	"github.com/katzenpost/client/session_pool"
-	"github.com/katzenpost/client/storage/egress"
+	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx"
@@ -39,13 +39,13 @@ const (
 type Sender struct {
 	identity     string
 	pool         *session_pool.SessionPool
-	store        *egress.Store
+	store        *storage.Store
 	routeFactory *path_selection.RouteFactory
 	userPKI      user_pki.UserPKI
 	handler      *block.Handler
 }
 
-func NewSender(identity string, pool *session_pool.SessionPool, store *egress.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) *Sender {
+func NewSender(identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) *Sender {
 	s := Sender{
 		identity:     identity,
 		pool:         pool,
@@ -59,7 +59,7 @@ func NewSender(identity string, pool *session_pool.SessionPool, store *egress.St
 
 // composeSphinxPacket creates a SendPacket wire protocol command with
 // a Sphinx packet and SURB header
-func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
+func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
 	forwardPath, replyPath, surbID, rtt, err := s.routeFactory.Build(storageBlock.SenderProvider, storageBlock.RecipientProvider, storageBlock.RecipientID)
 	if err != nil {
 		return nil, rtt, err
@@ -86,7 +86,7 @@ func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storag
 }
 
 // Send sends an encrypted block over the mixnet
-func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock) (time.Duration, error) {
+func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock) (time.Duration, error) {
 	var rtt time.Duration
 	receiverKey, err := s.userPKI.GetKey(storageBlock.Recipient)
 	if err != nil {
@@ -115,11 +115,11 @@ func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.
 type SendScheduler struct {
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
-	store        *egress.Store
+	store        *storage.Store
 	cancellation map[[constants.SURBIDLength]byte]bool
 }
 
-func NewSendScheduler(senders map[string]*Sender, store *egress.Store) *SendScheduler {
+func NewSendScheduler(senders map[string]*Sender, store *storage.Store) *SendScheduler {
 	s := SendScheduler{
 		senders:      senders,
 		cancellation: make(map[[constants.SURBIDLength]byte]bool),
@@ -128,7 +128,7 @@ func NewSendScheduler(senders map[string]*Sender, store *egress.Store) *SendSche
 	return &s
 }
 
-func (s *SendScheduler) Send(sender string, blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock) error {
+func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock) error {
 	rtt, err := s.senders[sender].Send(blockID, storageBlock)
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func (s *SendScheduler) Send(sender string, blockID *[egress.BlockIDLength]byte,
 	return nil
 }
 
-func (s *SendScheduler) add(rtt time.Duration, storageBlock *egress.StorageBlock) {
+func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.StorageBlock) {
 	s.sched.Add(rtt+RoundTripTimeSlop, storageBlock)
 }
 
@@ -148,7 +148,7 @@ func (s *SendScheduler) Cancel(id [constants.SURBIDLength]byte) {
 }
 
 func (s *SendScheduler) handleSend(task interface{}) {
-	storageBlock, ok := task.(*egress.StorageBlock)
+	storageBlock, ok := task.(*storage.StorageBlock)
 	if !ok {
 		log.Error("SendScheduler got invalid task from priority scheduler.")
 		return

@@ -23,7 +23,7 @@ import (
 
 	"github.com/katzenpost/client/scheduler"
 	"github.com/katzenpost/client/session_pool"
-	"github.com/katzenpost/client/storage/ingress"
+	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire/commands"
 )
@@ -33,11 +33,11 @@ type Fetcher struct {
 	Identity  string
 	sequence  uint32
 	pool      *session_pool.SessionPool
-	store     *ingress.Store
+	store     *storage.Store
 	scheduler *SendScheduler
 }
 
-func NewFetcher(identity string, pool *session_pool.SessionPool, store *ingress.Store) *Fetcher {
+func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.Store) *Fetcher {
 	fetcher := Fetcher{
 		Identity: identity,
 		sequence: uint32(0),
@@ -109,7 +109,7 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 // processMessage receives a message Block, decrypts it and
 // writes it to our local bolt db for eventual processing.
 func (f *Fetcher) processMessage(payload []byte) error {
-	return f.store.Put(f.Identity, payload)
+	return f.store.PutIngressBlock(f.Identity, payload)
 }
 
 // FetchScheduler is scheduler which is used to periodically

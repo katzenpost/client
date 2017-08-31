@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package egress
+package storage
 
 import (
 	"io/ioutil"
@@ -55,7 +55,7 @@ func TestDBBasics(t *testing.T) {
 	}
 	copy(s.SURBID[:], id)
 
-	_, err = store.Put(&s)
+	_, err = store.PutEgressBlock(&s)
 	require.NoError(err, "unexpected storeMessage() error")
 
 	surbs, err := store.GetKeys()
