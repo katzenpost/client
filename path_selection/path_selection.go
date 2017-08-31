@@ -200,47 +200,53 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // The generated forward and reply paths are intended to be used
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
-func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
+
+	var rtt time.Duration
 
 	// 1. Sample all forward and SURB delays.
 	forwardDelays := getDelays(r.lambda, r.nrHops)
 	replyDelays := getDelays(r.lambda, r.nrHops)
+
 	// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
 	//    2 * epoch_duration, as keys are only published 3 epochs in
 	//    advance.
 	_, _, till := epochtime.Now()
 	forwardDuration, err := durationFromFloat(sum(forwardDelays))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, rtt, err
 	}
 	replyDuration, err := durationFromFloat(sum(replyDelays))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, rtt, err
 	}
+
+	rtt = forwardDuration + replyDuration
+
 	if forwardDuration+replyDuration > till+(2*epochtime.Period) {
-		return nil, nil, nil, errors.New("selected delays exceed permitted epochtime range")
+		return nil, nil, nil, rtt, errors.New("selected delays exceed permitted epochtime range")
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
 	forwardDescriptors, err := r.getRouteDescriptors(senderProviderName, recipientProviderName)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, rtt, err
 	}
 	replyDescriptors, err := r.getRouteDescriptors(recipientProviderName, senderProviderName)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, rtt, err
 	}
 	// 4. Ensure that the forward and SURB mixes have a published key that
 	//    will allow them to decrypt the packet at the time of it's expected
 	//    arrival.
 	forwardPath, _, err := r.newPathVector(till, forwardDelays, forwardDescriptors, recipientID, false)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, rtt, err
 	}
 	replyPath, surbID, err := r.newPathVector(till, replyDelays, replyDescriptors, recipientID, true)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, rtt, err
 	}
-	return forwardPath, replyPath, surbID, nil
+	return forwardPath, replyPath, surbID, rtt, nil
 }
 
 // Build builds forward and reply paths
@@ -248,21 +254,22 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 // due to mix routing keys not being available for the
 // selected delays. We give up after four tries and return an error.
 func (r *RouteFactory) Build(senderProvider, recipientProvider string,
-	recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+	recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
 
 	var err error = nil
 	var forwardPath []*sphinx.PathHop
 	var replyPath []*sphinx.PathHop
 	var surbID *[constants.SURBIDLength]byte
+	var rtt time.Duration
 
 	for i := 0; i < 4; i++ {
-		forwardPath, replyPath, surbID, err = r.next(senderProvider, recipientProvider, recipientID)
+		forwardPath, replyPath, surbID, rtt, err = r.next(senderProvider, recipientProvider, recipientID)
 		if err == nil {
 			break
 		}
 	}
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("RouteFactory.Build failed: %s", err)
+		return nil, nil, nil, rtt, fmt.Errorf("RouteFactory.Build failed: %s", err)
 	}
-	return forwardPath, replyPath, surbID, nil
+	return forwardPath, replyPath, surbID, rtt, nil
 }

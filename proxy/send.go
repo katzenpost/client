@@ -17,6 +17,8 @@
 package proxy
 
 import (
+	"time"
+
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/scheduler"
@@ -29,6 +31,11 @@ import (
 	"github.com/katzenpost/core/wire/commands"
 )
 
+const (
+	RoundTripTimeSlop = 3 * time.Minute // XXX fix me
+)
+
+// Sender is used to send a message over the mixnet
 type Sender struct {
 	identity     string
 	pool         *session_pool.SessionPool
@@ -36,61 +43,63 @@ type Sender struct {
 	routeFactory *path_selection.RouteFactory
 	userPKI      user_pki.UserPKI
 	handler      *block.Handler
-	scheduler    *SendScheduler
 }
 
-func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock, payload []byte) (*commands.SendPacket, error) {
-	forwardPath, replyPath, surbID, err := s.routeFactory.Build(storageBlock.SenderProvider, storageBlock.RecipientProvider, storageBlock.RecipientID)
+// composeSphinxPacket creates a SendPacket wire protocol command with
+// a Sphinx packet and SURB header
+func (s *Sender) composeSphinxPacket(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
+	forwardPath, replyPath, surbID, rtt, err := s.routeFactory.Build(storageBlock.SenderProvider, storageBlock.RecipientProvider, storageBlock.RecipientID)
 	if err != nil {
-		return nil, err
+		return nil, rtt, err
 	}
 	surb, surbKeys, err := sphinx.NewSURB(rand.Reader, replyPath)
 	if err != nil {
-		return nil, err
+		return nil, rtt, err
 	}
 	storageBlock.SURBKeys = surbKeys
 	storageBlock.SendAttempts += 1
 	storageBlock.SURBID = *surbID
 	err = s.store.Update(blockID, storageBlock)
 	if err != nil {
-		return nil, err
+		return nil, rtt, err
 	}
 	sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, append(surb, payload...))
 	if err != nil {
-		return nil, err
+		return nil, rtt, err
 	}
 	cmd := commands.SendPacket{
 		SphinxPacket: sphinxPacket,
 	}
-	return &cmd, nil
+	return &cmd, rtt, nil
 }
 
-func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock) error {
+// Send sends an encrypted block over the mixnet
+func (s *Sender) Send(blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock) (time.Duration, error) {
+	var rtt time.Duration
 	receiverKey, err := s.userPKI.GetKey(storageBlock.Recipient)
 	if err != nil {
-		return err
+		return rtt, err
 	}
 	blockCiphertext := s.handler.Encrypt(receiverKey, &storageBlock.Block)
-	cmd, err := s.composeSphinxPacket(blockID, storageBlock, blockCiphertext)
+	cmd, rtt, err := s.composeSphinxPacket(blockID, storageBlock, blockCiphertext)
 	if err != nil {
-		return err
+		return rtt, err
 	}
 	session, mutex, err := s.pool.Get(s.identity)
 	if err != nil {
-		return err
+		return rtt, err
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
 	err = session.SendCommand(cmd)
 	if err != nil {
-		return err
+		return rtt, err
 	}
-	// schedule a resend in the future
-	// (but it can be cancelled if we receive an ACK)
-	s.scheduler.Add(storageBlock)
-	return nil
+	return rtt, nil
 }
 
+// SendScheduler is used to send messages and schedule the retransmission
+// if the ACK wasn't received in time
 type SendScheduler struct {
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
@@ -98,16 +107,28 @@ type SendScheduler struct {
 	cancellation map[[constants.SURBIDLength]byte]bool
 }
 
-func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
+func NewSendScheduler(senders map[string]*Sender, store *egress.Store) *SendScheduler {
 	s := SendScheduler{
-		senders: senders,
+		senders:      senders,
+		cancellation: make(map[[constants.SURBIDLength]byte]bool),
 	}
 	s.sched = scheduler.New(s.handleSend)
 	return &s
 }
 
-func (s *SendScheduler) Add(storageBlock *egress.StorageBlock) {
-	s.sched.Add(666, storageBlock) // XXX no time for thyme tea
+func (s *SendScheduler) Send(sender string, blockID *[egress.BlockIDLength]byte, storageBlock *egress.StorageBlock) error {
+	rtt, err := s.senders[sender].Send(blockID, storageBlock)
+	if err != nil {
+		return err
+	}
+	// schedule a resend in the future
+	// (but it can be cancelled if we receive an ACK)
+	s.add(rtt, storageBlock)
+	return nil
+}
+
+func (s *SendScheduler) add(rtt time.Duration, storageBlock *egress.StorageBlock) {
+	s.sched.Add(rtt+RoundTripTimeSlop, storageBlock)
 }
 
 func (s *SendScheduler) Cancel(id [constants.SURBIDLength]byte) {
@@ -122,9 +143,10 @@ func (s *SendScheduler) handleSend(task interface{}) {
 	}
 	_, ok = s.cancellation[storageBlock.SURBID]
 	if !ok {
-		err := s.senders[storageBlock.Recipient].Send(&storageBlock.BlockID, storageBlock)
+		rtt, err := s.senders[storageBlock.Sender].Send(&storageBlock.BlockID, storageBlock)
 		if err != nil {
 			log.Error(err)
 		}
+		s.add(rtt, storageBlock)
 	}
 }

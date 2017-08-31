@@ -180,7 +180,7 @@ type SubmitProxy struct {
 
 	store *egress.Store
 
-	senders map[string]*Sender
+	scheduler *SendScheduler
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
@@ -242,6 +242,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
 		storageBlock := egress.StorageBlock{
+			Sender:            sender,
 			SenderProvider:    senderProvider,
 			Recipient:         receiver,
 			RecipientID:       recipientID,
@@ -253,7 +254,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		if err != nil {
 			return err
 		}
-		p.senders[sender].Send(blockID, &storageBlock)
+		p.scheduler.Send(sender, blockID, &storageBlock)
 	}
 	return nil
 }

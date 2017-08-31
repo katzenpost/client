@@ -38,6 +38,7 @@ const (
 // XXX todo: finish this source file... conversion to and from json.
 type StorageBlock struct {
 	BlockID           [BlockIDLength]byte
+	Sender            string
 	SenderProvider    string
 	Recipient         string
 	RecipientProvider string
@@ -51,6 +52,7 @@ type StorageBlock struct {
 // JsonStorageBlock is a json serializable representation of StorageBlock
 type JsonStorageBlock struct {
 	BlockID           string
+	Sender            string
 	SenderProvider    string
 	Recipient         string
 	RecipientProvider string
@@ -85,6 +87,7 @@ func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 		return nil, err
 	}
 	s := StorageBlock{
+		Sender:            j.Sender,
 		SenderProvider:    j.SenderProvider,
 		Recipient:         j.Recipient,
 		RecipientProvider: j.RecipientProvider,
@@ -103,6 +106,7 @@ func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 func (s *StorageBlock) ToJsonStorageBlock() *JsonStorageBlock {
 	j := JsonStorageBlock{
 		BlockID:           base64.StdEncoding.EncodeToString(s.BlockID[:]),
+		Sender:            s.Sender,
 		SenderProvider:    s.SenderProvider,
 		Recipient:         s.Recipient,
 		RecipientProvider: s.RecipientProvider,
