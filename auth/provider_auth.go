@@ -25,11 +25,16 @@ import (
 	"github.com/katzenpost/core/wire"
 )
 
+// ProviderAuthenticator implements the PeerAuthenticator interface
+// which is used to authenticate remote peers (in this case a provider)
+// based on the authenticated key exchange
+// as specified in core/wire/session.go
 type ProviderAuthenticator struct {
 	config  *config.Config
 	keysMap map[[255]byte]*ecdh.PublicKey
 }
 
+// New creates a new ProviderAuthenticator
 func New(config *config.Config) (*ProviderAuthenticator, error) {
 	keysMap, err := config.GetProviderPinnedKeys()
 	if err != nil {
