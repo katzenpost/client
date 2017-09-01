@@ -45,6 +45,7 @@ type Sender struct {
 	handler      *block.Handler
 }
 
+// NewSender creates a new Sender
 func NewSender(identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) *Sender {
 	s := Sender{
 		identity:     identity,
@@ -119,6 +120,9 @@ type SendScheduler struct {
 	cancellation map[[constants.SURBIDLength]byte]bool
 }
 
+// NewSendScheduler creates a new SendScheduler which is used
+// to implement our Stop and Wait ARQ for sending messages
+// on behalf of one or more user identities
 func NewSendScheduler(senders map[string]*Sender, store *storage.Store) *SendScheduler {
 	s := SendScheduler{
 		senders:      senders,
@@ -128,6 +132,7 @@ func NewSendScheduler(senders map[string]*Sender, store *storage.Store) *SendSch
 	return &s
 }
 
+// Send sends the given block and adds a retransmit job to the scheduler
 func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock) error {
 	rtt, err := s.senders[sender].Send(blockID, storageBlock)
 	if err != nil {
@@ -139,14 +144,18 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 	return nil
 }
 
+// add adds a retransmit job to the scheduler
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.StorageBlock) {
 	s.sched.Add(rtt+RoundTripTimeSlop, storageBlock)
 }
 
+// Cancel ensures that a given retransmit will not be executed
 func (s *SendScheduler) Cancel(id [constants.SURBIDLength]byte) {
 	s.cancellation[id] = true
 }
 
+// handleSend is called by the scheduler to perform
+// a retransmit
 func (s *SendScheduler) handleSend(task interface{}) {
 	storageBlock, ok := task.(*storage.StorageBlock)
 	if !ok {

@@ -31,24 +31,55 @@ import (
 )
 
 const (
+	// EgressBucketName is the name of the boltdb bucket
+	// used for storing messages received from our SMTP listener
 	EgressBucketName = "outgoing"
-	BlockIDLength    = 8
+
+	// BlockIDLength is the length of our storage block IDs
+	// which are used to uniquely identify storage blocks
+	// in the boltdb ingress buckets
+	BlockIDLength = 8
 )
 
 // StorageBlock contains an encrypted message fragment
 // and other fields needed to send it to the destination
-// XXX todo: finish this source file... conversion to and from json.
 type StorageBlock struct {
-	BlockID           [BlockIDLength]byte
-	Sender            string
-	SenderProvider    string
-	Recipient         string
+
+	// BlockID is used to uniquely identify storage blocks
+	BlockID [BlockIDLength]byte
+
+	// Sender is the sender identity (aka e-mail address)
+	Sender string
+
+	// SenderProvider is the Provider for a given sender.
+	// (the part of the email address after the @-sign)
+	SenderProvider string
+
+	// Recipient is the recipient identity/e-mail address
+	Recipient string
+
+	// RecipientProvider is the Provider name of the recipient
+	// (the part of the email address after the @-sign)
 	RecipientProvider string
-	RecipientID       [sphinxconstants.RecipientIDLength]byte
-	SendAttempts      uint8
-	SURBKeys          []byte
-	SURBID            [sphinxconstants.SURBIDLength]byte
-	Block             block.Block
+
+	// RecipientID is the user ID for a given recipient
+	// which is padded to fixed length
+	RecipientID [sphinxconstants.RecipientIDLength]byte
+
+	// SendAttempts is the number of attempts to retransmit
+	// a given message block
+	SendAttempts uint8
+
+	// SURBKeys are the keys used to decrypt a message
+	// composed using a SURB. See github.com/katzenpost/core/sphinx
+	SURBKeys []byte
+
+	// SURBID is used to uniquely identify a message and decryption keys
+	// for a message composed using a SURB.
+	SURBID [sphinxconstants.SURBIDLength]byte
+
+	// Block is a message fragment
+	Block block.Block
 }
 
 // JsonStorageBlock is a json serializable representation of StorageBlock
@@ -236,6 +267,7 @@ func (s *Store) GetKeys() ([][BlockIDLength]byte, error) {
 	return keys, nil
 }
 
+// Get returns a serialized storage block given a block ID
 func (s *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 	var err error
 	ret := []byte{}

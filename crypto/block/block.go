@@ -56,6 +56,7 @@ type Block struct {
 	// Padding     []byte
 }
 
+// JsonBlock is used to serialize a Block to JSON format
 type JsonBlock struct {
 	MessageID   string
 	TotalBlocks int
@@ -63,6 +64,7 @@ type JsonBlock struct {
 	Block       string
 }
 
+// ToBlock deserializes a JsonBlock into a Block
 func (j *JsonBlock) ToBlock() (*Block, error) {
 	b := Block{
 		TotalBlocks: uint16(j.TotalBlocks),
@@ -80,6 +82,7 @@ func (j *JsonBlock) ToBlock() (*Block, error) {
 	return &b, nil
 }
 
+// ToJsonBlock is used to serialize a Block into a JsonBlock
 func (b *Block) ToJsonBlock() *JsonBlock {
 	j := JsonBlock{
 		MessageID:   base64.StdEncoding.EncodeToString(b.MessageID[:]),
@@ -90,6 +93,7 @@ func (b *Block) ToJsonBlock() *JsonBlock {
 	return &j
 }
 
+// ToBytes serializes a Block into bytes in JSON format
 func (b *Block) ToBytes() []byte {
 	if len(b.Block) > BlockLength {
 		panic("client/block: oversized Block payload")
@@ -108,6 +112,8 @@ func (b *Block) ToBytes() []byte {
 	return out
 }
 
+// FromBytes deserializes bytes in JSON format to a Block
+// or it returns an error if any
 func FromBytes(raw []byte) (*Block, error) {
 	if len(raw) != blockOverhead+BlockLength {
 		return nil, errors.New("client/block: invalid block size")

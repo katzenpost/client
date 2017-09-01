@@ -37,6 +37,7 @@ type Fetcher struct {
 	scheduler *SendScheduler
 }
 
+// NewFetcher creates a new Fetcher
 func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.Store) *Fetcher {
 	fetcher := Fetcher{
 		Identity: identity,
@@ -48,7 +49,10 @@ func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.
 }
 
 // Fetch fetches a message and returns
-// the queue size hint or an error
+// the queue size hint or an error.
+// The fetched message is then handled
+// by either storing it in the DB or
+// by cancelling a retransmit if it's an ACK message
 func (f *Fetcher) Fetch() (uint8, error) {
 	var queueHintSize uint8
 	session, mutex, err := f.pool.Get(f.Identity)
