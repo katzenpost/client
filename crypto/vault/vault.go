@@ -30,12 +30,19 @@ import (
 )
 
 const (
-	SaltSize          = 8
-	PassphraseMinSize = 12
-	SecretboxNoneSize = 24
+	// argon2SaltSize is the salt size for use with argon2
+	argon2SaltSize = 8
+
+	// passphraseMinSize is the minimum allowed passphrase size
+	passphraseMinSize = 12
+
+	// secretboxNonceSize is the nonce size for NaCl SecretBox
+	secretboxNonceSize = 24
 )
 
-// Vault is used to Encrypt sensitive data to disk
+// Vault is used to Encrypt sensitive data to disk.
+// Uses argon2 for keystretching and NaCl SecretBox
+// for encryption.
 type Vault struct {
 	Type       string
 	Passphrase string
@@ -43,12 +50,24 @@ type Vault struct {
 	Email      string
 }
 
-func (v *Vault) stretch(passphrase string) ([]byte, error) {
-	if len(passphrase) < PassphraseMinSize {
+// New creates a new Vault
+func New(vaultType, passphrase, path, email string) (*Vault, error) {
+	if len(passphrase) < passphraseMinSize {
 		return nil, errors.New("passphrase too short")
 	}
-	salt := passphrase[0:SaltSize]
-	pass := passphrase[SaltSize:]
+	v := Vault{
+		Type:       vaultType,
+		Email:      email,
+		Passphrase: passphrase,
+		Path:       path,
+	}
+	return &v, nil
+}
+
+// stretch performs argon2 key stretching on the given passphrase
+func (v *Vault) stretch(passphrase string) ([]byte, error) {
+	salt := passphrase[0:argon2SaltSize]
+	pass := passphrase[argon2SaltSize:]
 	par := 2
 	mem := int64(1 << 16)
 	keyLen := 32
@@ -60,6 +79,7 @@ func (v *Vault) stretch(passphrase string) ([]byte, error) {
 	return out, nil
 }
 
+// Open returns decrypted data from the vault
 func (v *Vault) Open() ([]byte, error) {
 	pemPayload, err := ioutil.ReadFile(v.Path)
 	if err != nil {
@@ -95,6 +115,8 @@ func (v *Vault) Open() ([]byte, error) {
 	return plaintext, nil
 }
 
+// Seal encrypts given plaintext and writes
+// it into the vault, saving it to a file on disk
 func (v *Vault) Seal(plaintext []byte) error {
 	key, err := v.stretch(v.Passphrase)
 	if err != nil {
@@ -103,7 +125,7 @@ func (v *Vault) Seal(plaintext []byte) error {
 	sealKey := [32]byte{}
 	copy(sealKey[:], key)
 
-	nonce := [SecretboxNoneSize]byte{}
+	nonce := [secretboxNonceSize]byte{}
 	_, err = rand.Reader.Read(nonce[:])
 	if err != nil {
 		return err
@@ -113,9 +135,9 @@ func (v *Vault) Seal(plaintext []byte) error {
 	ciphertext := secretbox.Seal(out, plaintext, &nonce, &sealKey)
 
 	fileMode := os.FileMode(0600)
-	payload := make([]byte, len(ciphertext)+SecretboxNoneSize)
+	payload := make([]byte, len(ciphertext)+secretboxNonceSize)
 	copy(payload, nonce[:])
-	copy(payload[SecretboxNoneSize:], ciphertext)
+	copy(payload[secretboxNonceSize:], ciphertext)
 
 	headers := map[string]string{
 		"email": v.Email,
