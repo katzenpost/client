@@ -35,26 +35,35 @@ import (
 
 var log = logging.MustGetLogger("mixclient")
 
+// Account is used to deserialize the account sections
+// of the configuration file
 type Account struct {
 	Name     string
 	Provider string
 }
 
+// ProviderPinning is used to deserialize the
+// provider pinning sections of the configuration file
 type ProviderPinning struct {
 	PublicKeyFile string
 	Name          string
 }
 
+// SMTPProxy is used to deserialize the
+// smtp section of the configuration file
 type SMTPProxy struct {
 	Address string
 	Network string
 }
 
+// POP3Proxy is used to deserialize the pop3
+// section of the configuration file
 type POP3Proxy struct {
 	Address string
 	Network string
 }
 
+// Config is used to deserialize the configuration file
 type Config struct {
 	Account         []Account
 	ProviderPinning []ProviderPinning
@@ -62,14 +71,19 @@ type Config struct {
 	POP3Proxy       POP3Proxy
 }
 
-// AccountsMap map of email -> end to end private key
+// AccountsMap map of email to user private key
+// for each account that is used
 type AccountsMap map[string]*ecdh.PrivateKey
 
+// HasIdentity returns true if a given lower cased identity/email
+// is found in the AccountsMap
 func (a *AccountsMap) HasIdentity(email string) bool {
 	_, ok := (*a)[strings.ToLower(email)]
 	return ok
 }
 
+// GetIdentityKey returns a private key corresponding to the
+// given lower cased identity/email
 func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
 	key, ok := (*a)[strings.ToLower(email)]
 	if ok {
@@ -78,10 +92,12 @@ func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
 	return nil, errors.New("identity key not found")
 }
 
+// CreateKeyFileName composes a filename given several arguments
 func CreateKeyFileName(keysDir, prefix, name, provider, keyType string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
 }
 
+// GetAccountKey decrypts and returns a private key material or an error
 func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
 	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, "private")
 	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
@@ -126,6 +142,7 @@ func (c *Config) AccountIdentities() []string {
 	return accounts
 }
 
+// writeKey generates and encrypts a key to disk
 func writeKey(keysDir, prefix, name, provider, passphrase string) error {
 	privateKeyFile := CreateKeyFileName(keysDir, prefix, name, provider, "private")
 	_, err := os.Stat(privateKeyFile)
