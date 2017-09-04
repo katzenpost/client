@@ -147,20 +147,10 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 
 // SubmitProxy handles SMTP mail submissions. This means we act as an SMTP
 // daemon, accepting e-mail messages and proxying them to the mix network
-// via the Providers. Furthermore I instantiate an instance of the
-// Poisson Stop and Wait ARQ reliability protocol scheme as well as three layers of
-// crypto:
-//
-//    * link layer / sphinx layer / end to end layer
-//
-// Note: the end to end crypto is Client to Client while the Provider
-// participates in our reliability protocol receiving ciphertext on behalf
-// of the recipient.
-//
-// The outgoing messages are persisted to disk in a cryptographically sealed file vault.
-// If the client stops operating before receiving the corresponding ACK message,
-// the client will later be able to retreive messages from disk and retransmit them.
+// via the Providers.
 type SubmitProxy struct {
+
+	// accounts is a mapping of emails to private keys
 	accounts *config.AccountsMap
 
 	// randomReader is an implementation of the io.Reader interface
@@ -171,15 +161,18 @@ type SubmitProxy struct {
 	// userPKI implements the UserPKI interface
 	userPKI user_pki.UserPKI
 
+	// store is used to persist messages to disk
 	store *storage.Store
 
 	// session pool of connections to each provider
 	sessionPool *session_pool.SessionPool
 
+	// routeFactory is used to create mixnet routes
 	routeFactory *path_selection.RouteFactory
 
 	whitelist []string
 
+	// scheduler send message blocks and implements the Stop and Wait ARQ
 	scheduler *SendScheduler
 }
 
