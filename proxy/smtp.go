@@ -228,25 +228,21 @@ func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
 			if err != nil {
 				return nil, err
 			}
+			var blockPayload []byte
 			if i == totalBlocks-1 {
-				blockPayload := [constants.ForwardPayloadLength]byte{}
+				payload := [constants.ForwardPayloadLength]byte{}
+				blockPayload = payload[:]
 				copy(blockPayload[:], message[i*constants.ForwardPayloadLength:])
-				block := block.Block{
-					MessageID:   id,
-					TotalBlocks: uint16(totalBlocks),
-					BlockID:     uint16(i),
-					Block:       blockPayload[:],
-				}
-				blocks = append(blocks, &block)
 			} else {
-				block := block.Block{
-					MessageID:   id,
-					TotalBlocks: uint16(totalBlocks),
-					BlockID:     uint16(i),
-					Block:       message[i*constants.ForwardPayloadLength : (i+1)*constants.ForwardPayloadLength],
-				}
-				blocks = append(blocks, &block)
+				blockPayload = message[i*constants.ForwardPayloadLength : (i+1)*constants.ForwardPayloadLength]
 			}
+			block := block.Block{
+				MessageID:   id,
+				TotalBlocks: uint16(totalBlocks),
+				BlockID:     uint16(i),
+				Block:       blockPayload,
+			}
+			blocks = append(blocks, &block)
 		}
 	}
 	return blocks, nil
