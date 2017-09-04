@@ -19,9 +19,9 @@ package proxy
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/mail"
 	"strings"
@@ -221,7 +221,21 @@ func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
 		}
 		blocks = append(blocks, &block)
 	} else {
-		return nil, errors.New("error: fragmentation not yet implemented")
+		totalBlocks := int(math.Ceil(float64(len(message))/float64(constants.ForwardPayloadLength)) / float64(constants.ForwardPayloadLength))
+		for i := 0; i < totalBlocks; i++ {
+			id := [clientconstants.MessageIDLength]byte{}
+			_, err := p.randomReader.Read(id[:])
+			if err != nil {
+				return nil, err
+			}
+			block := block.Block{
+				MessageID:   id,
+				TotalBlocks: uint16(totalBlocks),
+				BlockID:     uint16(i),
+				Block:       message[i*constants.ForwardPayloadLength : (i+1)*constants.ForwardPayloadLength],
+			}
+			blocks = append(blocks, &block)
+		}
 	}
 	return blocks, nil
 }
