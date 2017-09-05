@@ -21,19 +21,15 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/mail"
 	"strings"
 
 	"github.com/katzenpost/client/config"
-	clientconstants "github.com/katzenpost/client/constants"
-	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
-	"github.com/katzenpost/core/constants"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
@@ -197,54 +193,10 @@ func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki 
 	return &submissionProxy
 }
 
-// fragmentMessage fragments a message into a slice of blocks
-func (p *SubmitProxy) fragmentMessage(message []byte) ([]*block.Block, error) {
-	blocks := []*block.Block{}
-	if len(message) <= constants.ForwardPayloadLength {
-		id := [clientconstants.MessageIDLength]byte{}
-		_, err := p.randomReader.Read(id[:])
-		if err != nil {
-			return nil, err
-		}
-		block := block.Block{
-			MessageID:   id,
-			TotalBlocks: 1,
-			BlockID:     0,
-			Block:       message,
-		}
-		blocks = append(blocks, &block)
-	} else {
-		totalBlocks := int(math.Ceil(float64(len(message)) / float64(constants.ForwardPayloadLength)))
-		for i := 0; i < totalBlocks; i++ {
-			id := [clientconstants.MessageIDLength]byte{}
-			_, err := p.randomReader.Read(id[:])
-			if err != nil {
-				return nil, err
-			}
-			var blockPayload []byte
-			if i == totalBlocks-1 {
-				payload := [constants.ForwardPayloadLength]byte{}
-				blockPayload = payload[:]
-				copy(blockPayload[:], message[i*constants.ForwardPayloadLength:])
-			} else {
-				blockPayload = message[i*constants.ForwardPayloadLength : (i+1)*constants.ForwardPayloadLength]
-			}
-			block := block.Block{
-				MessageID:   id,
-				TotalBlocks: uint16(totalBlocks),
-				BlockID:     uint16(i),
-				Block:       blockPayload,
-			}
-			blocks = append(blocks, &block)
-		}
-	}
-	return blocks, nil
-}
-
 // enqueueMessage enqueues the message in our persistent message store
 // so that it can soon be sent on it's way to the recipient.
 func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) error {
-	blocks, err := p.fragmentMessage(message)
+	blocks, err := fragmentMessage(p.randomReader, message)
 	if err != nil {
 		return err
 	}

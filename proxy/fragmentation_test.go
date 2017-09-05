@@ -28,15 +28,11 @@ import (
 func TestFragmentation(t *testing.T) {
 	require := require.New(t)
 
-	s := &SubmitProxy{
-		randomReader: rand.Reader,
-	}
-
 	message := [constants.ForwardPayloadLength*2 + 77]byte{}
 	_, err := rand.Reader.Read(message[:])
 	require.NoError(err, "rand reader failed")
 
-	blocks, err := s.fragmentMessage(message[:])
+	blocks, err := fragmentMessage(rand.Reader, message[:])
 	require.NoError(err, "fragmentMessage failed")
 
 	require.Equal(3, len(blocks), "wrong number of blocks")
