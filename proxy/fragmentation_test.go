@@ -20,6 +20,7 @@ package proxy
 import (
 	"testing"
 
+	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
@@ -39,4 +40,26 @@ func TestFragmentation(t *testing.T) {
 	for _, block := range blocks {
 		require.Equal(constants.ForwardPayloadLength, len(block.Block), "block is incorrect size")
 	}
+}
+
+func TestReassembly(t *testing.T) {
+	require := require.New(t)
+
+	blocks := []*block.Block{
+		&block.Block{
+			BlockID: 2,
+			Block:   []byte{7, 8, 9},
+		},
+		&block.Block{
+			BlockID: 0,
+			Block:   []byte{1, 2, 3},
+		},
+		&block.Block{
+			BlockID: 1,
+			Block:   []byte{4, 5, 6},
+		},
+	}
+	message, err := reassembleMessage(blocks)
+	require.NoError(err, "reassembleMessage failed")
+	t.Logf("message is %v", message)
 }

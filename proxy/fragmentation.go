@@ -18,16 +18,36 @@
 package proxy
 
 import (
+	"errors"
 	"io"
 	"math"
+	"sort"
 
 	clientconstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/core/constants"
 )
 
-//func reassembleMessage([]*block.Block) ([]byte, error) {
-//}
+// ByBlockID implements sort.Interface for []*block.Block
+type ByBlockID []*block.Block
+
+func (a ByBlockID) Len() int           { return len(a) }
+func (a ByBlockID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByBlockID) Less(i, j int) bool { return a[i].BlockID < a[j].BlockID }
+
+// reassembleMessage reassembles a message returns it or an error
+// if a block is missing
+func reassembleMessage(blocks []*block.Block) ([]byte, error) {
+	sort.Sort(ByBlockID(blocks))
+	message := []byte{}
+	for i, block := range blocks {
+		if blocks[i].BlockID != uint16(i) {
+			return nil, errors.New("message reassembler failed: missing message block")
+		}
+		message = append(message, block.Block...)
+	}
+	return message, nil
+}
 
 // fragmentMessage fragments a message into a slice of blocks
 func fragmentMessage(randomReader io.Reader, message []byte) ([]*block.Block, error) {
