@@ -50,7 +50,7 @@ func TestDeduplication(t *testing.T) {
 	}
 }
 
-func TestFragmentation(t *testing.T) {
+func TestFragmentationBig(t *testing.T) {
 	require := require.New(t)
 
 	message := [constants.ForwardPayloadLength*2 + 77]byte{}
@@ -64,6 +64,20 @@ func TestFragmentation(t *testing.T) {
 	for _, block := range blocks {
 		require.Equal(constants.ForwardPayloadLength, len(block.Block), "block is incorrect size")
 	}
+}
+
+func TestFragmentationSmall(t *testing.T) {
+	require := require.New(t)
+
+	message := [constants.ForwardPayloadLength - 22]byte{}
+	_, err := rand.Reader.Read(message[:])
+	require.NoError(err, "rand reader failed")
+
+	blocks, err := fragmentMessage(rand.Reader, message[:])
+	require.NoError(err, "fragmentMessage failed")
+
+	require.Equal(1, len(blocks), "wrong number of blocks")
+	require.Equal(constants.ForwardPayloadLength, len(blocks[0].Block), "block is incorrect size")
 }
 
 func TestReassembly(t *testing.T) {
@@ -86,4 +100,21 @@ func TestReassembly(t *testing.T) {
 	message, err := reassembleMessage(blocks)
 	require.NoError(err, "reassembleMessage failed")
 	t.Logf("message is %v", message)
+}
+
+func TestReassemblyMissingBlock(t *testing.T) {
+	require := require.New(t)
+
+	blocks := []*block.Block{
+		&block.Block{
+			BlockID: 2,
+			Block:   []byte{7, 8, 9},
+		},
+		&block.Block{
+			BlockID: 0,
+			Block:   []byte{1, 2, 3},
+		},
+	}
+	_, err := reassembleMessage(blocks)
+	require.Error(err, "reassembleMessage should've failed")
 }

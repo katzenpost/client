@@ -71,21 +71,23 @@ func fragmentMessage(randomReader io.Reader, message []byte) ([]*block.Block, er
 		if err != nil {
 			return nil, err
 		}
+		payload := [constants.ForwardPayloadLength]byte{}
+		copy(payload[:], message)
 		block := block.Block{
 			MessageID:   id,
 			TotalBlocks: 1,
 			BlockID:     0,
-			Block:       message,
+			Block:       payload[:],
 		}
 		blocks = append(blocks, &block)
 	} else {
 		totalBlocks := int(math.Ceil(float64(len(message)) / float64(constants.ForwardPayloadLength)))
 		id := [clientconstants.MessageIDLength]byte{}
 		_, err := randomReader.Read(id[:])
+		if err != nil {
+			return nil, err
+		}
 		for i := 0; i < totalBlocks; i++ {
-			if err != nil {
-				return nil, err
-			}
 			var blockPayload []byte
 			if i == totalBlocks-1 {
 				payload := [constants.ForwardPayloadLength]byte{}
