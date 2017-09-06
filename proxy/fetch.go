@@ -130,25 +130,18 @@ func (f *Fetcher) processMessage(payload []byte) error {
 	}
 	blocks = deduplicateBlocks(blocks)
 	if len(blocks) == int(b.TotalBlocks) {
-		err := f.reassembleMessage(blocks, blockKeys)
+		message, err := reassembleMessage(blocks)
 		if err != nil {
 			return err
 		}
+		err = f.store.PutMessage(f.Identity, message)
+		if err != nil {
+			return err
+		}
+		err = f.store.RemoveBlocks(f.Identity, blockKeys)
+		return err
 	}
 	return nil
-}
-
-func (f *Fetcher) reassembleMessage(blocks []*block.Block, blockKeys [][]byte) error {
-	message, err := reassembleMessage(blocks)
-	if err != nil {
-		return err
-	}
-	err = f.store.PutMessage(f.Identity, message)
-	if err != nil {
-		return err
-	}
-	err = f.store.RemoveBlocks(f.Identity, blockKeys)
-	return err
 }
 
 // FetchScheduler is scheduler which is used to periodically
