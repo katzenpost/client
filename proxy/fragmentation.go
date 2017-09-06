@@ -28,6 +28,19 @@ import (
 	"github.com/katzenpost/core/constants"
 )
 
+func deduplicateBlocks(blocks []*block.Block) []*block.Block {
+	blockMap := make(map[uint16]bool)
+	deduped := []*block.Block{}
+	for _, b := range blocks {
+		_, ok := blockMap[b.BlockID]
+		if !ok {
+			blockMap[b.BlockID] = true
+			deduped = append(deduped, b)
+		}
+	}
+	return deduped
+}
+
 // ByBlockID implements sort.Interface for []*block.Block
 type ByBlockID []*block.Block
 

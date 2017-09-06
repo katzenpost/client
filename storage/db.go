@@ -331,9 +331,8 @@ func (s *Store) CreateAccountBuckets(accounts []string) error {
 	return nil
 }
 
-// Put puts an message fragment ciphertext, a Block,
-// into the corresponding blocks bucket for that account
-func (s *Store) PutIngressBlock(accountName string, payload []byte) error {
+// Put puts a message Block, into the corresponding bucket for that account
+func (s *Store) PutIngressBlock(accountName string, b *block.Block) error {
 	transaction := func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
 		if bucket == nil {
@@ -343,8 +342,58 @@ func (s *Store) PutIngressBlock(accountName string, payload []byte) error {
 		if err != nil {
 			return err
 		}
-		err = bucket.Put([]byte(strconv.Itoa(int(seq))), payload)
+		blockBytes := b.ToBytes()
+		err = bucket.Put([]byte(strconv.Itoa(int(seq))), blockBytes)
 		return err
+	}
+	err := s.db.Update(transaction)
+	return err
+}
+
+// GetIngressBlocks returns a slice of blocks which contain
+// the given message ID for the given account name
+func (s *Store) GetIngressBlocks(accountName string, messageID [constants.MessageIDLength]byte) ([]*block.Block, [][]byte, error) {
+	blocks := []*block.Block{}
+	keys := [][]byte{}
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+		if b == nil {
+			return errors.New("boltdb bucket for that account doesn't exist")
+		}
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			b, err := block.FromBytes(v)
+			if err != nil {
+				return err
+			}
+			if b.MessageID == messageID {
+				blocks = append(blocks, b)
+				keys = append(keys, k)
+			}
+		}
+		return nil
+	}
+	err := s.db.View(transaction)
+	if err != nil {
+		return nil, nil, err
+	}
+	return blocks, keys, nil
+}
+
+// RemoveBlocks removes the blocks using the specified keys
+func (s *Store) RemoveBlocks(accountName string, keys [][]byte) error {
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+		if b == nil {
+			return errors.New("boltdb bucket for that account doesn't exist")
+		}
+		for _, key := range keys {
+			err := b.Delete(key)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	err := s.db.Update(transaction)
 	return err
@@ -370,6 +419,30 @@ func (s *Store) Messages(accountName string) ([][]byte, error) {
 		return nil, err
 	}
 	return messages, nil
+}
+
+// PutMessage puts a fully assembled plaintext message into
+// the db where it can be retrieved using our pop3 service
+func (s *Store) PutMessage(accountName string, message []byte) error {
+	var err error
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
+		seq, err := b.NextSequence()
+		if err != nil {
+			return err
+		}
+		err = b.Put([]byte(strconv.Itoa(int(seq))), message)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	err = s.db.Update(transaction)
+	if err != nil {
+		return err
+	}
+	return nil
+
 }
 
 // deleteMessage deletes a single message from

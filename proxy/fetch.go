@@ -21,6 +21,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/scheduler"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
@@ -35,6 +36,7 @@ type Fetcher struct {
 	pool      *session_pool.SessionPool
 	store     *storage.Store
 	scheduler *SendScheduler
+	handler   *block.Handler
 }
 
 // NewFetcher creates a new Fetcher
@@ -113,7 +115,40 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 // processMessage receives a message Block, decrypts it and
 // writes it to our local bolt db for eventual processing.
 func (f *Fetcher) processMessage(payload []byte) error {
-	return f.store.PutIngressBlock(f.Identity, payload)
+	// XXX for now we ignore the peer identity
+	b, _, err := f.handler.Decrypt(payload)
+	if err != nil {
+		return err
+	}
+	err = f.store.PutIngressBlock(f.Identity, b)
+	if err != nil {
+		return err
+	}
+	blocks, blockKeys, err := f.store.GetIngressBlocks(f.Identity, b.MessageID)
+	if err != nil {
+		return err
+	}
+	blocks = deduplicateBlocks(blocks)
+	if len(blocks) == int(b.TotalBlocks) {
+		err := f.reassembleMessage(blocks, blockKeys)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *Fetcher) reassembleMessage(blocks []*block.Block, blockKeys [][]byte) error {
+	message, err := reassembleMessage(blocks)
+	if err != nil {
+		return err
+	}
+	err = f.store.PutMessage(f.Identity, message)
+	if err != nil {
+		return err
+	}
+	err = f.store.RemoveBlocks(f.Identity, blockKeys)
+	return err
 }
 
 // FetchScheduler is scheduler which is used to periodically

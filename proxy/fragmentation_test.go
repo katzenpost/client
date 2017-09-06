@@ -26,6 +26,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeduplication(t *testing.T) {
+	require := require.New(t)
+
+	blocks := []*block.Block{
+		&block.Block{
+			BlockID: 0,
+			Block:   []byte{1, 2, 3},
+		},
+		&block.Block{
+			BlockID: 0,
+			Block:   []byte{1, 2, 3},
+		},
+		&block.Block{
+			BlockID: 1,
+			Block:   []byte{4, 5, 6},
+		},
+	}
+	deduped := deduplicateBlocks(blocks)
+	require.NotEqual(len(deduped), len(blocks), "deduplicateBlocks failed")
+	for _, d := range deduped {
+		t.Logf("deduped id %d", d.BlockID)
+	}
+}
+
 func TestFragmentation(t *testing.T) {
 	require := require.New(t)
 
