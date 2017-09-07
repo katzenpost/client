@@ -175,12 +175,12 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 		} else {
 			if isSURB {
 				surbReply := new(commands.SURBReply)
-				id := [constants.SURBIDLength]byte{}
-				_, err := rand.Reader.Read(id[:])
+				surbID = &[constants.SURBIDLength]byte{}
+				_, err := rand.Reader.Read(surbID[:])
 				if err != nil {
 					return nil, nil, err
 				}
-				surbReply.ID = id
+				surbReply.ID = *surbID
 				path[i].Commands = append(path[i].Commands, surbReply)
 			} else {
 				// Terminal hop, add the recipient.

@@ -154,8 +154,9 @@ func TestPathSelection(t *testing.T) {
 	copy(recipientID[:], []byte(recipientName))
 	forwardRoute, replyRoute, surbID, rtt, err := factory.Build(senderProvider, recipientProvider, recipientID)
 	require.NoError(err, "build route error")
+	require.NotNil(surbID, "surbID should NOT be nil")
 	t.Logf("built a forward path %s", forwardRoute)
 	t.Logf("built a reply path %s", replyRoute)
 	t.Logf("rtt is %s", rtt)
-	t.Logf("surb ID %x", surbID)
+	t.Logf("surb ID %v", *surbID)
 }
