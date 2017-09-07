@@ -1,4 +1,4 @@
-// common_test.go - Tests for common code of the noise based wire protocol.
+// vault_test.go - tests for client crypto vault
 // Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify

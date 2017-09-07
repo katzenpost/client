@@ -93,7 +93,7 @@ func (b *Block) ToJsonBlock() *JsonBlock {
 	return &j
 }
 
-// ToBytes serializes a Block into bytes in JSON format
+// ToBytes serializes a Block into bytes
 func (b *Block) ToBytes() []byte {
 	if len(b.Block) > BlockLength {
 		panic("client/block: oversized Block payload")

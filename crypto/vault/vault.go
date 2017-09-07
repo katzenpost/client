@@ -30,13 +30,13 @@ import (
 )
 
 const (
-	// argon2SaltSize is the salt size for use with argon2
+	// argon2SaltSize is the salt size in bytes for use with argon2
 	argon2SaltSize = 8
 
-	// passphraseMinSize is the minimum allowed passphrase size
+	// passphraseMinSize is the minimum allowed passphrase size in bytes
 	passphraseMinSize = 12
 
-	// secretboxNonceSize is the nonce size for NaCl SecretBox
+	// secretboxNonceSize is the nonce size in bytes for NaCl SecretBox
 	secretboxNonceSize = 24
 )
 
@@ -68,10 +68,22 @@ func New(vaultType, passphrase, path, email string) (*Vault, error) {
 func (v *Vault) stretch(passphrase string) ([]byte, error) {
 	salt := passphrase[0:argon2SaltSize]
 	pass := passphrase[argon2SaltSize:]
-	par := 2
-	mem := int64(1 << 16)
+
+	// length in bytes of output key
 	keyLen := 32
+
+	// argon2 cost parameters
+
+	// parallelism
+	par := 2
+
+	// mem is the amount of memory to use in kibibytes.
+	// (mem must be at least 8*p, and will be rounded to a multiple of 4*p)
+	mem := int64(1 << 16)
+
+	// number of iterations
 	n := 32
+
 	out, err := argon2.Key([]byte(pass), []byte(salt), n, par, mem, keyLen)
 	if err != nil {
 		return nil, err
@@ -88,9 +100,6 @@ func (v *Vault) Open() ([]byte, error) {
 	block, _ := pem.Decode(pemPayload)
 	if block == nil {
 		return nil, errors.New("failed to decode pem file")
-	}
-	if len(block.Headers) == 0 {
-		return nil, errors.New("PEM Header does not contain e-mail address.")
 	}
 
 	var nonce [24]byte
