@@ -17,6 +17,8 @@
 package proxy
 
 import (
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/client/crypto/block"
@@ -28,6 +30,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 )
 
@@ -37,8 +40,9 @@ const (
 
 // Sender is used to send a message over the mixnet
 type Sender struct {
+	mutex        *sync.Mutex
 	identity     string
-	pool         *session_pool.SessionPool
+	session      wire.SessionInterface
 	store        *storage.Store
 	routeFactory *path_selection.RouteFactory
 	userPKI      user_pki.UserPKI
@@ -46,16 +50,21 @@ type Sender struct {
 }
 
 // NewSender creates a new Sender
-func NewSender(identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) *Sender {
+func NewSender(identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) (*Sender, error) {
+	session, mutex, err := pool.Get(identity)
+	if err != nil {
+		return nil, err
+	}
 	s := Sender{
+		mutex:        mutex,
+		session:      session,
 		identity:     identity,
-		pool:         pool,
 		store:        store,
 		routeFactory: routeFactory,
 		userPKI:      userPKI,
 		handler:      handler,
 	}
-	return &s
+	return &s, nil
 }
 
 // composeSphinxPacket creates a SendPacket wire protocol command with
@@ -65,6 +74,9 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 	if err != nil {
 		return nil, rtt, err
 	}
+
+	fmt.Printf("yopyoyoyo surb id %v", surbID)
+
 	surb, surbKeys, err := sphinx.NewSURB(rand.Reader, replyPath)
 	if err != nil {
 		return nil, rtt, err
@@ -98,13 +110,9 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 	if err != nil {
 		return rtt, err
 	}
-	session, mutex, err := s.pool.Get(s.identity)
-	if err != nil {
-		return rtt, err
-	}
-	mutex.Lock()
-	defer mutex.Unlock()
-	err = session.SendCommand(cmd)
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	err = s.session.SendCommand(cmd)
 	if err != nil {
 		return rtt, err
 	}

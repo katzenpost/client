@@ -35,14 +35,14 @@ var log = logging.MustGetLogger("mixclient")
 // SessionPool maps sender email string to sender identity
 // wire protocol session with the Provider
 type SessionPool struct {
-	sessions map[string]*wire.Session
-	locks    map[string]*sync.Mutex
+	Sessions map[string]wire.SessionInterface
+	Locks    map[string]*sync.Mutex
 }
 
 // New creates a new SessionPool
 func New(accounts *config.AccountsMap, config *config.Config, providerAuthenticator wire.PeerAuthenticator, mixPKI pki.Client) (*SessionPool, error) {
 	s := SessionPool{
-		sessions: make(map[string]*wire.Session),
+		Sessions: make(map[string]wire.SessionInterface),
 	}
 	for _, acct := range config.Account {
 		email := fmt.Sprintf("%s@%s", acct.Name, acct.Provider)
@@ -73,27 +73,27 @@ func New(accounts *config.AccountsMap, config *config.Config, providerAuthentica
 		if err != nil {
 			return nil, err
 		}
-		s.sessions[email] = session
+		s.Sessions[email] = session
 	}
 	return &s, nil
 }
 
-func (s *SessionPool) Add(identity string, session *wire.Session) {
-	s.sessions[identity] = session
-	s.locks[identity] = &sync.Mutex{}
+func (s *SessionPool) Add(identity string, session wire.SessionInterface) {
+	s.Sessions[identity] = session
+	s.Locks[identity] = &sync.Mutex{}
 }
 
-func (s *SessionPool) Get(identity string) (*wire.Session, *sync.Mutex, error) {
-	v, ok := s.sessions[identity]
+func (s *SessionPool) Get(identity string) (wire.SessionInterface, *sync.Mutex, error) {
+	v, ok := s.Sessions[identity]
 	if !ok {
 		return nil, nil, errors.New("wire protocol session pool key not found")
 	}
-	return v, s.locks[identity], nil
+	return v, s.Locks[identity], nil
 }
 
 func (s *SessionPool) Identities() []string {
 	ids := []string{}
-	for id, _ := range s.sessions {
+	for id, _ := range s.Sessions {
 		ids = append(ids, id)
 	}
 	return ids
