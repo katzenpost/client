@@ -18,9 +18,10 @@
 package path_selection
 
 import (
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
-	mathrand "math/rand"
+	"math/big"
 	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -105,8 +106,11 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 		if len(layerMixes) == 0 {
 			fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
 		}
-		c := mathrand.Intn(len(layerMixes))
-		descriptors[i] = layerMixes[c]
+		c, err := cryptorand.Int(rand.Reader, big.NewInt(int64(len(layerMixes))))
+		if err != nil {
+			return nil, err
+		}
+		descriptors[i] = layerMixes[c.Int64()]
 	}
 	return descriptors, nil
 }
