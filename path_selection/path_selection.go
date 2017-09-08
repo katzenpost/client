@@ -156,10 +156,9 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	delays []float64,
 	descriptors []*pki.MixDescriptor,
 	recipientID [constants.RecipientIDLength]byte,
-	isSURB bool) ([]*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+	isSURB bool) (path []*sphinx.PathHop, surbID *[constants.SURBIDLength]byte, err error) {
 
-	path := make([]*sphinx.PathHop, r.numHops)
-	var surbID *[constants.SURBIDLength]byte = nil
+	path = make([]*sphinx.PathHop, r.numHops)
 	keys, err := r.getHopEpochKeys(till, delays, descriptors)
 	if err != nil {
 		return nil, nil, err
