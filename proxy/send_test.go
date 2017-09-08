@@ -237,6 +237,8 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 			case *sphinxcommands.Recipient:
 				t.Logf("Recipient command: %s", cmd.ID)
 				break L
+			default:
+				break L
 			}
 		}
 		payload, _, routingInfo, err = sphinx.Unwrap(mixKey, sphinxPacket)
