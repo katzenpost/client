@@ -33,9 +33,8 @@ import (
 )
 
 // durationFromFloat returns millisecond time.Duration given a float64
-func durationFromFloat(delay float64) (time.Duration, error) {
-	d, err := time.ParseDuration(fmt.Sprintf("%fms", delay))
-	return d, err
+func durationFromFloat(delay float64) time.Duration {
+	return time.Duration(int64(delay * time.Nanosecond / time.Millisecond))
 }
 
 // getDelays returns a list of delays from
@@ -128,10 +127,7 @@ func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, des
 	keys := make([]*ecdh.PublicKey, r.nrHops)
 	for i := 0; i < len(descriptors); i++ {
 		hopDelay += delays[i]
-		hopDuration, err := durationFromFloat(hopDelay)
-		if err != nil {
-			return nil, err
-		}
+		hopDuration := durationFromFloat(hopDelay)
 		if hopDuration < till {
 			keys[i] = descriptors[i].EpochAPublicKey
 		} else if hopDuration > till && hopDuration < till+epochtime.Period {
@@ -212,15 +208,8 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 	//    2 * epoch_duration, as keys are only published 3 epochs in
 	//    advance.
 	_, _, till := epochtime.Now()
-	forwardDuration, err := durationFromFloat(sum(forwardDelays))
-	if err != nil {
-		return nil, nil, nil, rtt, err
-	}
-	replyDuration, err := durationFromFloat(sum(replyDelays))
-	if err != nil {
-		return nil, nil, nil, rtt, err
-	}
-
+	forwardDuration := durationFromFloat(sum(forwardDelays))
+	replyDuration := durationFromFloat(sum(replyDelays))
 	rtt = forwardDuration + replyDuration
 
 	if forwardDuration+replyDuration > till+(2*epochtime.Period) {
