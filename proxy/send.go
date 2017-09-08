@@ -17,7 +17,6 @@
 package proxy
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -74,9 +73,6 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 	if err != nil {
 		return nil, rtt, err
 	}
-
-	fmt.Printf("yopyoyoyo surb id %v", surbID)
-
 	surb, surbKeys, err := sphinx.NewSURB(rand.Reader, replyPath)
 	if err != nil {
 		return nil, rtt, err

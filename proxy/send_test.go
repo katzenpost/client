@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/sphinx"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
@@ -59,7 +60,7 @@ func newMixDescriptor(isProvider bool, name string, layer int, publicKey *ecdh.P
 	return &d
 }
 
-func newMixPKI(require *require.Assertions) (pki.Client, map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey) {
+func newMixPKI(require *require.Assertions) (pki.Client, map[string]*ecdh.PrivateKey) {
 	type testDesc struct {
 		Name  string
 		Layer int
@@ -133,13 +134,13 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[[sphinxconstants.No
 		},
 	}
 
-	keysMap := make(map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey)
+	keysMap := make(map[string]*ecdh.PrivateKey)
 	staticPKI := mix_pki.NewStaticPKI()
 	for _, provider := range test_providers {
 		privKey, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "ecdh NewKeypair error")
 		descriptor := newMixDescriptor(true, provider.Name, provider.Layer, privKey.PublicKey(), provider.IP, provider.Port)
-		keysMap[descriptor.ID] = privKey
+		keysMap[provider.Name] = privKey
 		staticPKI.ProviderMap[descriptor.Name] = descriptor
 		staticPKI.MixMap[descriptor.ID] = descriptor
 	}
@@ -147,19 +148,22 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[[sphinxconstants.No
 		privKey, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "ecdh NewKeypair error")
 		descriptor := newMixDescriptor(true, mix.Name, mix.Layer, privKey.PublicKey(), mix.IP, mix.Port)
-		keysMap[descriptor.ID] = privKey
+		keysMap[mix.Name] = privKey
 		staticPKI.MixMap[descriptor.ID] = descriptor
 	}
 	return staticPKI, keysMap
 }
 
-type MockSession struct{}
+type MockSession struct {
+	sentCommands []commands.Command
+}
 
 func (m *MockSession) Initialize(conn net.Conn) error {
 	return nil
 }
 
 func (m *MockSession) SendCommand(cmd commands.Command) error {
+	m.sentCommands = append(m.sentCommands, cmd)
 	return nil
 }
 
@@ -214,10 +218,17 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 	return pool, store, idKey, blockHandler
 }
 
+func decryptSphinxLayers(require *require.Assertions, sphinxPacket []byte, providerKey *ecdh.PrivateKey) []byte {
+	payload, _, routingInfo, err := sphinx.Unwrap(providerKey, sphinxPacket)
+	require.NoError(err, "sphinx.Unwrap failure")
+	sphinxPacket = payload
+	return sphinxPacket
+}
+
 func TestSender(t *testing.T) {
 	require := require.New(t)
 
-	mixPKI, _ := newMixPKI(require)
+	mixPKI, mixKeysMap := newMixPKI(require)
 	nrHops := 4
 	lambda := float64(.123)
 	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
@@ -241,14 +252,14 @@ func TestSender(t *testing.T) {
 	bobSender, err := NewSender("bob@nsa.gov", bobPool, bobStore, routeFactory, userPKI, bobBlockHandler)
 	require.NoError(err, "NewSender failure")
 
-	blockID := [storage.BlockIDLength]byte{}
+	// Alice sends message to Bob
 	bobID := [sphinxconstants.RecipientIDLength]byte{}
 	copy(bobID[:], "bob")
 	toBobBlock := block.Block{
 		TotalBlocks: 1,
 		Block:       []byte("yo bobby, what up?"),
 	}
-	storageBlock := storage.StorageBlock{
+	aliceStorageBlock := storage.StorageBlock{
 		Sender:            "alice@acme.com",
 		SenderProvider:    "acme.com",
 		Recipient:         "bob@nsa.gov",
@@ -256,14 +267,38 @@ func TestSender(t *testing.T) {
 		RecipientID:       bobID,
 		Block:             toBobBlock,
 	}
-	rtt, err := aliceSender.Send(&blockID, &storageBlock)
+	blockID, err := aliceStore.PutEgressBlock(&aliceStorageBlock)
+	rtt, err := aliceSender.Send(blockID, &aliceStorageBlock)
 	require.NoError(err, "Send failure")
 	t.Logf("Alice send rtt %d", rtt)
 
-	blockID = [storage.BlockIDLength]byte{}
-	storageBlock = storage.StorageBlock{}
-	rtt, err = bobSender.Send(&blockID, &storageBlock)
+	// decrypt Alice's captured sphinx packet
+	session := alicePool.Sessions["alice@acme.com"]
+	mockSession, ok := session.(*MockSession)
+	require.True(ok, "failed to get MockSession")
+	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
+	require.True(ok, "failed to get SendPacket command")
+	// XXX aliceMixKeys
+	aliceProviderKey := mixKeysMap["acme.com"]
+	ciphertextPayload := decryptSphinxLayers(require, sendPacket.SphinxPacket, aliceProviderKey)
+
+	// Bob sends message to Alice
+	aliceID := [sphinxconstants.RecipientIDLength]byte{}
+	copy(aliceID[:], "alice")
+	toAliceBlock := block.Block{
+		TotalBlocks: 1,
+		Block:       []byte("Alice, I have the documents you requested."),
+	}
+	bobStorageBlock := storage.StorageBlock{
+		Sender:            "bob@nsa.gov",
+		SenderProvider:    "nsa.gov",
+		Recipient:         "alice@acme.com",
+		RecipientProvider: "acme.com",
+		RecipientID:       aliceID,
+		Block:             toAliceBlock,
+	}
+	blockID, err = bobStore.PutEgressBlock(&bobStorageBlock)
+	rtt, err = bobSender.Send(blockID, &bobStorageBlock)
 	require.NoError(err, "Send failure")
 	t.Logf("Bob send rtt %d", rtt)
-
 }
