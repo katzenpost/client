@@ -102,9 +102,8 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	}
 	for i := 0; i < r.numHops; i++ {
 		layerMixes := r.pki.GetMixesInLayer(uint8(i))
-		fmt.Printf("layer %d\n", i)
 		if len(layerMixes) == 0 {
-			panic("WTF")
+			fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
 		}
 		c := mathrand.Intn(len(layerMixes))
 		descriptors[i] = layerMixes[c]
