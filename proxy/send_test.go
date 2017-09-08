@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
+	sphinxcommands "github.com/katzenpost/core/sphinx/commands"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
@@ -60,7 +61,7 @@ func newMixDescriptor(isProvider bool, name string, layer int, publicKey *ecdh.P
 	return &d
 }
 
-func newMixPKI(require *require.Assertions) (pki.Client, map[string]*ecdh.PrivateKey) {
+func newMixPKI(require *require.Assertions) (pki.Client, map[string]*ecdh.PrivateKey, map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey) {
 	type testDesc struct {
 		Name  string
 		Layer int
@@ -134,13 +135,14 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[string]*ecdh.Privat
 		},
 	}
 
-	keysMap := make(map[string]*ecdh.PrivateKey)
+	providerMap := make(map[string]*ecdh.PrivateKey)
+	mixMap := make(map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey)
 	staticPKI := mix_pki.NewStaticPKI()
 	for _, provider := range test_providers {
 		privKey, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "ecdh NewKeypair error")
 		descriptor := newMixDescriptor(true, provider.Name, provider.Layer, privKey.PublicKey(), provider.IP, provider.Port)
-		keysMap[provider.Name] = privKey
+		providerMap[provider.Name] = privKey
 		staticPKI.ProviderMap[descriptor.Name] = descriptor
 		staticPKI.MixMap[descriptor.ID] = descriptor
 	}
@@ -148,10 +150,10 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[string]*ecdh.Privat
 		privKey, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "ecdh NewKeypair error")
 		descriptor := newMixDescriptor(true, mix.Name, mix.Layer, privKey.PublicKey(), mix.IP, mix.Port)
-		keysMap[mix.Name] = privKey
+		mixMap[descriptor.ID] = privKey
 		staticPKI.MixMap[descriptor.ID] = descriptor
 	}
-	return staticPKI, keysMap
+	return staticPKI, providerMap, mixMap
 }
 
 type MockSession struct {
@@ -218,17 +220,35 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 	return pool, store, idKey, blockHandler
 }
 
-func decryptSphinxLayers(require *require.Assertions, sphinxPacket []byte, providerKey *ecdh.PrivateKey) []byte {
-	payload, _, routingInfo, err := sphinx.Unwrap(providerKey, sphinxPacket)
+func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, providerKey *ecdh.PrivateKey, mixMap map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey) []byte {
+	var payload []byte
+	_, _, routingInfo, err := sphinx.Unwrap(providerKey, sphinxPacket)
 	require.NoError(err, "sphinx.Unwrap failure")
-	sphinxPacket = payload
-	return sphinxPacket
+	terminalHop := false
+	var mixKey *ecdh.PrivateKey
+	for !terminalHop {
+	L:
+		for _, routingCommand := range routingInfo {
+			switch cmd := routingCommand.(type) {
+			case *sphinxcommands.NextNodeHop:
+				mixKey = mixMap[cmd.ID]
+				t.Logf("NextNodeHop command: %x", cmd.ID)
+				break L
+			case *sphinxcommands.Recipient:
+				t.Logf("Recipient command: %s", cmd.ID)
+				break L
+			}
+		}
+		payload, _, routingInfo, err = sphinx.Unwrap(mixKey, sphinxPacket)
+		require.NoError(err, "sphinx.Unwrap failure")
+	}
+	return payload
 }
 
 func TestSender(t *testing.T) {
 	require := require.New(t)
 
-	mixPKI, mixKeysMap := newMixPKI(require)
+	mixPKI, providerMap, mixMap := newMixPKI(require)
 	nrHops := 4
 	lambda := float64(.123)
 	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
@@ -278,9 +298,8 @@ func TestSender(t *testing.T) {
 	require.True(ok, "failed to get MockSession")
 	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
 	require.True(ok, "failed to get SendPacket command")
-	// XXX aliceMixKeys
-	aliceProviderKey := mixKeysMap["acme.com"]
-	ciphertextPayload := decryptSphinxLayers(require, sendPacket.SphinxPacket, aliceProviderKey)
+	aliceProviderKey := providerMap["acme.com"]
+	_ = decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, mixMap)
 
 	// Bob sends message to Alice
 	aliceID := [sphinxconstants.RecipientIDLength]byte{}
