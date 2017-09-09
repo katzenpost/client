@@ -247,7 +247,7 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 	return payload
 }
 
-func TestSender(t *testing.T) {
+func NotTestSender(t *testing.T) {
 	require := require.New(t)
 
 	mixPKI, providerMap, mixMap := newMixPKI(require)

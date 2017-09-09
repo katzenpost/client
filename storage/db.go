@@ -31,15 +31,33 @@ import (
 )
 
 const (
-	// EgressBucketName is the name of the boltdb bucket
-	// used for storing messages received from our SMTP listener
-	EgressBucketName = "outgoing"
-
 	// BlockIDLength is the length of our storage block IDs
 	// which are used to uniquely identify storage blocks
 	// in the boltdb ingress buckets
 	BlockIDLength = 8
+
+	// EgressBucketName is the name of the boltdb bucket
+	// used for storing messages received from our SMTP listener.
+	// We intentionally have a single boltdb bucket that handles
+	// all the outgoing messages for the client.
+	EgressBucketName = "outgoing"
 )
+
+// ingressBucketNameFromAccount is a helper function that
+// returns the bucket name of the bucket that persists
+// encrypted message blocks given the name of an account.
+// (in this case the account is an e-mail address)
+func ingressBucketNameFromAccount(accountName string) []byte {
+	return []byte(fmt.Sprintf("%s_incoming", accountName))
+}
+
+// pop3BucketNameFromAccount is a helper function that
+// returns the bucket name of the bucket that persists
+// plaintext message constructed from one or more
+// encrypted blocks from the account's "_incoming" bucket.
+func pop3BucketNameFromAccount(accountName string) []byte {
+	return []byte(fmt.Sprintf("%s_pop3", accountName))
+}
 
 // StorageBlock contains an encrypted message fragment
 // and other fields needed to send it to the destination
@@ -310,7 +328,7 @@ func (s *Store) CreateAccountBuckets(accounts []string) error {
 	for _, accountName := range accounts {
 		// bucket for blocks, message fragment ciphertext
 		transaction := func(tx *bolt.Tx) error {
-			_, err := tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+			_, err := tx.CreateBucketIfNotExists(ingressBucketNameFromAccount(accountName))
 			return err
 		}
 		err := s.db.Update(transaction)
@@ -320,7 +338,7 @@ func (s *Store) CreateAccountBuckets(accounts []string) error {
 
 		// bucket for pop3, assembled messages
 		transaction = func(tx *bolt.Tx) error {
-			_, err := tx.CreateBucketIfNotExists([]byte(fmt.Sprintf("%s_pop3", accountName)))
+			_, err := tx.CreateBucketIfNotExists(pop3BucketNameFromAccount(accountName))
 			return err
 		}
 		err = s.db.Update(transaction)
@@ -334,7 +352,7 @@ func (s *Store) CreateAccountBuckets(accounts []string) error {
 // Put puts a message Block, into the corresponding bucket for that account
 func (s *Store) PutIngressBlock(accountName string, b *block.Block) error {
 	transaction := func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+		bucket := tx.Bucket(ingressBucketNameFromAccount(accountName))
 		if bucket == nil {
 			return fmt.Errorf("ingress store put failure: bucket not found: %s", accountName)
 		}
@@ -356,7 +374,7 @@ func (s *Store) GetIngressBlocks(accountName string, messageID [constants.Messag
 	blocks := []*block.Block{}
 	keys := [][]byte{}
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+		b := tx.Bucket(ingressBucketNameFromAccount(accountName))
 		if b == nil {
 			return errors.New("boltdb bucket for that account doesn't exist")
 		}
@@ -383,7 +401,7 @@ func (s *Store) GetIngressBlocks(accountName string, messageID [constants.Messag
 // RemoveBlocks removes the blocks using the specified keys
 func (s *Store) RemoveBlocks(accountName string, keys [][]byte) error {
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(fmt.Sprintf("%s_ingress_blocks", accountName)))
+		b := tx.Bucket(ingressBucketNameFromAccount(accountName))
 		if b == nil {
 			return errors.New("boltdb bucket for that account doesn't exist")
 		}
@@ -404,7 +422,7 @@ func (s *Store) RemoveBlocks(accountName string, keys [][]byte) error {
 func (s *Store) Messages(accountName string) ([][]byte, error) {
 	messages := [][]byte{}
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
+		b := tx.Bucket(pop3BucketNameFromAccount(accountName))
 		if b == nil {
 			return errors.New("boltdb bucket for that account doesn't exist")
 		}
@@ -426,7 +444,7 @@ func (s *Store) Messages(accountName string) ([][]byte, error) {
 func (s *Store) PutMessage(accountName string, message []byte) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
+		b := tx.Bucket(pop3BucketNameFromAccount(accountName))
 		seq, err := b.NextSequence()
 		if err != nil {
 			return err
@@ -450,7 +468,7 @@ func (s *Store) PutMessage(accountName string, message []byte) error {
 func (s *Store) deleteMessage(accountName string, item int) error {
 	var err error
 	transaction := func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(fmt.Sprintf("%s_pop3", accountName)))
+		b := tx.Bucket(pop3BucketNameFromAccount(accountName))
 		err := b.Delete([]byte(strconv.Itoa(item)))
 		return err
 	}
