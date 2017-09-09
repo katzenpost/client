@@ -18,9 +18,10 @@
 package path_selection
 
 import (
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
-	mathrand "math/rand"
+	"math/big"
 	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -51,19 +52,17 @@ func getDelays(lambda float64, count int) []float64 {
 	for i := 0; i < count-2; i++ {
 		delays[i] = rand.Exp(cryptRand, lambda)
 	}
-	delays[count-1] = float64(0)
 	return delays
 }
 
 // sum adds a slice of float64.
 // this is used to get the sum of delays
 // which are represented as float64s
-func sum(input []float64) float64 {
-	total := float64(0)
+func sum(input []float64) (total float64) {
 	for _, n := range input {
 		total += n
 	}
-	return total
+	return
 }
 
 // RouteFactory builds routes and by doing so handles all the
@@ -73,17 +72,17 @@ func sum(input []float64) float64 {
 // hop in the route where the mean of this distribution is tuneable
 // using the lambda parameter.
 type RouteFactory struct {
-	pki    pki.Client
-	nrHops int
-	lambda float64
+	pki     pki.Client
+	numHops int
+	lambda  float64
 }
 
 // NewRouteFactory creates a new RouteFactory for creating routes
-func New(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
+func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
 	r := RouteFactory{
-		pki:    pki,
-		nrHops: nrHops,
-		lambda: lambda,
+		pki:     pki,
+		numHops: numHops,
+		lambda:  lambda,
 	}
 	return &r
 }
@@ -93,23 +92,25 @@ func New(pki pki.Client, nrHops int, lambda float64) *RouteFactory {
 // was selected from the set of descriptors for that layer
 func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProviderName string) ([]*pki.MixDescriptor, error) {
 	var err error
-	descriptors := make([]*pki.MixDescriptor, r.nrHops)
+	descriptors := make([]*pki.MixDescriptor, r.numHops)
 	descriptors[0], err = r.pki.GetProviderDescriptor(senderProviderName)
 	if err != nil {
 		return nil, err
 	}
-	descriptors[r.nrHops-1], err = r.pki.GetProviderDescriptor(recipientProviderName)
+	descriptors[r.numHops-1], err = r.pki.GetProviderDescriptor(recipientProviderName)
 	if err != nil {
 		return nil, err
 	}
-	for i := 0; i < r.nrHops; i++ {
+	for i := 0; i < r.numHops; i++ {
 		layerMixes := r.pki.GetMixesInLayer(uint8(i))
-		fmt.Printf("layer %d\n", i)
 		if len(layerMixes) == 0 {
-			panic("WTF")
+			fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
 		}
-		c := mathrand.Intn(len(layerMixes))
-		descriptors[i] = layerMixes[c]
+		c, err := cryptorand.Int(rand.Reader, big.NewInt(int64(len(layerMixes))))
+		if err != nil {
+			return nil, err
+		}
+		descriptors[i] = layerMixes[c.Int64()]
 	}
 	return descriptors, nil
 }
@@ -125,7 +126,7 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 // https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt
 func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, descriptors []*pki.MixDescriptor) ([]*ecdh.PublicKey, error) {
 	hopDelay := delays[0]
-	keys := make([]*ecdh.PublicKey, r.nrHops)
+	keys := make([]*ecdh.PublicKey, r.numHops)
 	for i := 0; i < len(descriptors); i++ {
 		hopDelay += delays[i]
 		hopDuration, err := durationFromFloat(hopDelay)
@@ -155,10 +156,9 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	delays []float64,
 	descriptors []*pki.MixDescriptor,
 	recipientID [constants.RecipientIDLength]byte,
-	isSURB bool) ([]*sphinx.PathHop, *[constants.SURBIDLength]byte, error) {
+	isSURB bool) (path []*sphinx.PathHop, surbID *[constants.SURBIDLength]byte, err error) {
 
-	path := make([]*sphinx.PathHop, r.nrHops)
-	var surbID *[constants.SURBIDLength]byte = nil
+	path = make([]*sphinx.PathHop, r.numHops)
 	keys, err := r.getHopEpochKeys(till, delays, descriptors)
 	if err != nil {
 		return nil, nil, err
@@ -167,11 +167,11 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 		path[i] = new(sphinx.PathHop)
 		copy(path[i].ID[:], descriptors[i].ID[:])
 		path[i].PublicKey = keys[i]
-		if i < r.nrHops-1 {
+		if i < r.numHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = uint32(delays[i])
-			path[i].Commands = append(path[i].Commands, delay)
+			path[i].Commands = []commands.RoutingCommand{delay}
 		} else {
 			if isSURB {
 				surbReply := new(commands.SURBReply)
@@ -181,12 +181,12 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 					return nil, nil, err
 				}
 				surbReply.ID = *surbID
-				path[i].Commands = append(path[i].Commands, surbReply)
+				path[i].Commands = []commands.RoutingCommand{surbReply}
 			} else {
 				// Terminal hop, add the recipient.
 				recipient := new(commands.Recipient)
 				copy(recipient.ID[:], recipientID[:])
-				path[i].Commands = append(path[i].Commands, recipient)
+				path[i].Commands = []commands.RoutingCommand{recipient}
 			}
 		}
 	}
@@ -201,30 +201,28 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
 func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
-
-	var rtt time.Duration
-
-	// 1. Sample all forward and SURB delays.
-	forwardDelays := getDelays(r.lambda, r.nrHops)
-	replyDelays := getDelays(r.lambda, r.nrHops)
-
-	// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
-	//    2 * epoch_duration, as keys are only published 3 epochs in
-	//    advance.
-	_, _, till := epochtime.Now()
-	forwardDuration, err := durationFromFloat(sum(forwardDelays))
-	if err != nil {
-		return nil, nil, nil, rtt, err
-	}
-	replyDuration, err := durationFromFloat(sum(replyDelays))
-	if err != nil {
-		return nil, nil, nil, rtt, err
-	}
-
-	rtt = forwardDuration + replyDuration
-
-	if forwardDuration+replyDuration > till+(2*epochtime.Period) {
-		return nil, nil, nil, rtt, errors.New("selected delays exceed permitted epochtime range")
+	var rtt, till time.Duration
+	var forwardDelays, replyDelays []float64
+	for {
+		// 1. Sample all forward and SURB delays.
+		forwardDelays = getDelays(r.lambda, r.numHops)
+		replyDelays = getDelays(r.lambda, r.numHops)
+		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
+		//    2 * epoch_duration, as keys are only published 3 epochs in
+		//    advance.
+		_, _, till = epochtime.Now()
+		forwardDuration, err := durationFromFloat(sum(forwardDelays))
+		if err != nil {
+			return nil, nil, nil, rtt, err
+		}
+		replyDuration, err := durationFromFloat(sum(replyDelays))
+		if err != nil {
+			return nil, nil, nil, rtt, err
+		}
+		rtt = forwardDuration + replyDuration
+		if forwardDuration+replyDuration < till+(2*epochtime.Period) {
+			break
+		}
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
 	forwardDescriptors, err := r.getRouteDescriptors(senderProviderName, recipientProviderName)
