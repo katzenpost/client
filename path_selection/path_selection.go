@@ -171,7 +171,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = uint32(delays[i])
-			path[i].Commands = append(path[i].Commands, delay)
+			path[i].Commands = []commands.RoutingCommand{delay}
 		} else {
 			if isSURB {
 				surbReply := new(commands.SURBReply)
@@ -181,12 +181,12 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 					return nil, nil, err
 				}
 				surbReply.ID = *surbID
-				path[i].Commands = append(path[i].Commands, surbReply)
+				path[i].Commands = []commands.RoutingCommand{surbReply}
 			} else {
 				// Terminal hop, add the recipient.
 				recipient := new(commands.Recipient)
 				copy(recipient.ID[:], recipientID[:])
-				path[i].Commands = append(path[i].Commands, recipient)
+				path[i].Commands = []commands.RoutingCommand{recipient}
 			}
 		}
 	}
