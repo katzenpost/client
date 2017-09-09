@@ -17,6 +17,7 @@
 package path_selection
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/katzenpost/client/mix_pki"
@@ -159,4 +160,57 @@ func TestPathSelection(t *testing.T) {
 	t.Logf("built a reply path %s", replyRoute)
 	t.Logf("rtt is %s", rtt)
 	t.Logf("surb ID %v", *surbID)
+}
+
+type MockErrorPKI struct {
+	errProvider    bool
+	errGetMixes    bool
+	providerErrNum int
+}
+
+func (m *MockErrorPKI) GetLatestConsensusMap() *map[[constants.NodeIDLength]byte]*pki.MixDescriptor {
+	return nil
+}
+
+func (m *MockErrorPKI) GetProviderDescriptor(name string) (*pki.MixDescriptor, error) {
+	if m.errProvider {
+		m.providerErrNum = m.providerErrNum - 1
+		if m.providerErrNum > 0 {
+			return nil, errors.New("GetProviderDescriptor failure")
+		} else {
+			privKey, _ := ecdh.NewKeypair(rand.Reader)
+			descriptor := newMixDescriptor(true, "acme.com", 0, privKey.PublicKey(), "127.0.0.1", 666)
+			return descriptor, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockErrorPKI) GetMixesInLayer(layer uint8) []*pki.MixDescriptor {
+	if m.errGetMixes {
+		return []*pki.MixDescriptor{}
+	}
+	return []*pki.MixDescriptor{&pki.MixDescriptor{}}
+}
+
+func (m *MockErrorPKI) GetDescriptor(id [constants.NodeIDLength]byte) (*pki.MixDescriptor, error) {
+	return nil, nil
+}
+
+func TestGetRouteDescriptorsErrors(t *testing.T) {
+	require := require.New(t)
+
+	pki := MockErrorPKI{
+		errProvider:    true,
+		providerErrNum: 5,
+	}
+	nrHops := 4
+	lambda := float64(.123)
+	factory := New(&pki, nrHops, lambda)
+
+	senderProvider := "acme.com"
+	recipientProvider := "nsa.gov"
+	recipientID := [constants.RecipientIDLength]byte{}
+	_, _, _, _, err := factory.Build(senderProvider, recipientProvider, recipientID)
+	require.Error(err, "Build should have errored")
 }
