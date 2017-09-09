@@ -40,10 +40,29 @@ const (
 	secretboxNonceSize = 24
 )
 
+// Options is used to configure the argon2 key stretching cost parameters.
+// Default values are used when a nil Options pointer is passed to New.
+type Options struct {
+	// Parallelism
+	Parallelism int
+	// Memory is the amount of memory to use in kibibytes.
+	// (Memory must be at least 8*p, and will be rounded to a multiple of 4*p)
+	Memory int64
+	// NumIter is the number of iterations
+	NumIter int
+}
+
+var defaultOptions = Options{
+	Parallelism: 2,
+	Memory:      int64(1 << 16),
+	NumIter:     32,
+}
+
 // Vault is used to Encrypt sensitive data to disk.
 // Uses argon2 for keystretching and NaCl SecretBox
 // for encryption.
 type Vault struct {
+	options    *Options
 	Type       string
 	Passphrase string
 	Path       string
@@ -51,7 +70,7 @@ type Vault struct {
 }
 
 // New creates a new Vault
-func New(vaultType, passphrase, path, email string) (*Vault, error) {
+func New(vaultType, passphrase, path, email string, options *Options) (*Vault, error) {
 	if len(passphrase) < passphraseMinSize {
 		return nil, errors.New("passphrase too short")
 	}
@@ -61,6 +80,20 @@ func New(vaultType, passphrase, path, email string) (*Vault, error) {
 		Passphrase: passphrase,
 		Path:       path,
 	}
+	if options == nil {
+		v.options = &defaultOptions
+	} else {
+		v.options = options
+	}
+	if v.options.Parallelism == 0 {
+		v.options.Parallelism = defaultOptions.Parallelism
+	}
+	if v.options.Memory == 0 {
+		v.options.Memory = defaultOptions.Memory
+	}
+	if v.options.NumIter == 0 {
+		v.options.NumIter = defaultOptions.NumIter
+	}
 	return &v, nil
 }
 
@@ -68,23 +101,9 @@ func New(vaultType, passphrase, path, email string) (*Vault, error) {
 func (v *Vault) stretch(passphrase string) ([]byte, error) {
 	salt := passphrase[0:argon2SaltSize]
 	pass := passphrase[argon2SaltSize:]
-
 	// length in bytes of output key
 	keyLen := 32
-
-	// argon2 cost parameters
-
-	// parallelism
-	par := 2
-
-	// mem is the amount of memory to use in kibibytes.
-	// (mem must be at least 8*p, and will be rounded to a multiple of 4*p)
-	mem := int64(1 << 16)
-
-	// number of iterations
-	n := 32
-
-	out, err := argon2.Key([]byte(pass), []byte(salt), n, par, mem, keyLen)
+	out, err := argon2.Key([]byte(pass), []byte(salt), v.options.NumIter, v.options.Parallelism, v.options.Memory, keyLen)
 	if err != nil {
 		return nil, err
 	}
@@ -101,26 +120,21 @@ func (v *Vault) Open() ([]byte, error) {
 	if block == nil {
 		return nil, errors.New("failed to decode pem file")
 	}
-
 	var nonce [24]byte
 	copy(nonce[:], block.Bytes[0:24])
-
 	var key [32]byte
 	stretchedKey, err := v.stretch(v.Passphrase)
 	if err != nil {
 		return nil, err
 	}
 	copy(key[:], stretchedKey)
-
 	ciphertext := make([]byte, len(block.Bytes[24:]))
 	copy(ciphertext, block.Bytes[24:])
-
 	out := []byte{}
 	plaintext, isAuthed := secretbox.Open(out, ciphertext, &nonce, &key)
 	if !isAuthed {
 		return nil, errors.New("NaCl secretBox MAC failed")
 	}
-
 	return plaintext, nil
 }
 
@@ -133,21 +147,17 @@ func (v *Vault) Seal(plaintext []byte) error {
 	}
 	sealKey := [32]byte{}
 	copy(sealKey[:], key)
-
 	nonce := [secretboxNonceSize]byte{}
 	_, err = rand.Reader.Read(nonce[:])
 	if err != nil {
 		return err
 	}
-
 	out := []byte{}
 	ciphertext := secretbox.Seal(out, plaintext, &nonce, &sealKey)
-
 	fileMode := os.FileMode(0600)
 	payload := make([]byte, len(ciphertext)+secretboxNonceSize)
 	copy(payload, nonce[:])
 	copy(payload[secretboxNonceSize:], ciphertext)
-
 	headers := map[string]string{
 		"email": v.Email,
 	}
@@ -158,7 +168,6 @@ func (v *Vault) Seal(plaintext []byte) error {
 	}
 	buf := new(bytes.Buffer)
 	pem.Encode(buf, &block)
-
 	err = ioutil.WriteFile(v.Path, buf.Bytes(), fileMode)
 	if err != nil {
 		return err
