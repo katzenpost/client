@@ -201,30 +201,28 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
 func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
-
-	var rtt time.Duration
-
-	// 1. Sample all forward and SURB delays.
-	forwardDelays := getDelays(r.lambda, r.numHops)
-	replyDelays := getDelays(r.lambda, r.numHops)
-
-	// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
-	//    2 * epoch_duration, as keys are only published 3 epochs in
-	//    advance.
-	_, _, till := epochtime.Now()
-	forwardDuration, err := durationFromFloat(sum(forwardDelays))
-	if err != nil {
-		return nil, nil, nil, rtt, err
-	}
-	replyDuration, err := durationFromFloat(sum(replyDelays))
-	if err != nil {
-		return nil, nil, nil, rtt, err
-	}
-
-	rtt = forwardDuration + replyDuration
-
-	if forwardDuration+replyDuration > till+(2*epochtime.Period) {
-		return nil, nil, nil, rtt, errors.New("selected delays exceed permitted epochtime range")
+	var rtt, till time.Duration
+	var forwardDelays, replyDelays []float64
+	for {
+		// 1. Sample all forward and SURB delays.
+		forwardDelays = getDelays(r.lambda, r.numHops)
+		replyDelays = getDelays(r.lambda, r.numHops)
+		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
+		//    2 * epoch_duration, as keys are only published 3 epochs in
+		//    advance.
+		_, _, till = epochtime.Now()
+		forwardDuration, err := durationFromFloat(sum(forwardDelays))
+		if err != nil {
+			return nil, nil, nil, rtt, err
+		}
+		replyDuration, err := durationFromFloat(sum(replyDelays))
+		if err != nil {
+			return nil, nil, nil, rtt, err
+		}
+		rtt = forwardDuration + replyDuration
+		if forwardDuration+replyDuration < till+(2*epochtime.Period) {
+			break
+		}
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
 	forwardDescriptors, err := r.getRouteDescriptors(senderProviderName, recipientProviderName)
