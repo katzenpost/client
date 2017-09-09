@@ -1,4 +1,4 @@
-// common_test.go - Tests for common code of the noise based wire protocol.
+// vault_test.go - tests for client crypto vault
 // Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@ func TestVaultOpenSeal(t *testing.T) {
 	passphrase := "up up down down left right right left"
 	vaultPath := tmpfile.Name()
 	email := "fake e-mail address"
-	v1, err := New("type1", passphrase, vaultPath, email)
+	v1, err := New("type1", passphrase, vaultPath, email, nil)
 	assert.NoError(err, "Vault creation failed")
 	plaintext1 := "war is peace freedom is slavery ignorance is strength"
 	err = v1.Seal([]byte(plaintext1))
