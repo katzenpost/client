@@ -1,4 +1,4 @@
-// wire_peer_auth.go - client wire authentication for peers
+// provider_auth.go - client wire authentication for peers
 // Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify
