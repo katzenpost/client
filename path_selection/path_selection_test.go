@@ -145,7 +145,7 @@ func TestPathSelection(t *testing.T) {
 	require := require.New(t)
 	mixPKI, _ := newMixPKI(require)
 	nrHops := 4
-	lambda := float64(.123)
+	lambda := float64(.00123)
 	factory := New(mixPKI, nrHops, lambda)
 
 	senderProvider := "acme.com"
@@ -205,7 +205,7 @@ func TestGetRouteDescriptorsErrors(t *testing.T) {
 		providerErrNum: 5,
 	}
 	nrHops := 4
-	lambda := float64(.123)
+	lambda := float64(.00123)
 	factory := New(&pki, nrHops, lambda)
 
 	senderProvider := "acme.com"

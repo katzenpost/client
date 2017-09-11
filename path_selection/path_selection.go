@@ -34,9 +34,8 @@ import (
 )
 
 // durationFromFloat returns millisecond time.Duration given a float64
-func durationFromFloat(delay float64) (time.Duration, error) {
-	d, err := time.ParseDuration(fmt.Sprintf("%fms", delay))
-	return d, err
+func durationFromFloat(delay float64) time.Duration {
+	return time.Duration(float64(delay) * float64(time.Millisecond))
 }
 
 // getDelays returns a list of delays from
@@ -49,7 +48,7 @@ func durationFromFloat(delay float64) (time.Duration, error) {
 func getDelays(lambda float64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
-	for i := 0; i < count-2; i++ {
+	for i := 0; i < count; i++ {
 		delays[i] = rand.Exp(cryptRand, lambda)
 	}
 	return delays
@@ -128,11 +127,8 @@ func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, des
 	hopDelay := delays[0]
 	keys := make([]*ecdh.PublicKey, r.numHops)
 	for i := 0; i < len(descriptors); i++ {
-		hopDelay += delays[i]
-		hopDuration, err := durationFromFloat(hopDelay)
-		if err != nil {
-			return nil, err
-		}
+		hopDelay = hopDelay + delays[i]
+		hopDuration := durationFromFloat(hopDelay)
 		if hopDuration < till {
 			keys[i] = descriptors[i].EpochAPublicKey
 		} else if hopDuration > till && hopDuration < till+epochtime.Period {
@@ -211,14 +207,8 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.
 		_, _, till = epochtime.Now()
-		forwardDuration, err := durationFromFloat(sum(forwardDelays))
-		if err != nil {
-			return nil, nil, nil, rtt, err
-		}
-		replyDuration, err := durationFromFloat(sum(replyDelays))
-		if err != nil {
-			return nil, nil, nil, rtt, err
-		}
+		forwardDuration := durationFromFloat(sum(forwardDelays))
+		replyDuration := durationFromFloat(sum(replyDelays))
 		rtt = forwardDuration + replyDuration
 		if forwardDuration+replyDuration < till+(2*epochtime.Period) {
 			break
