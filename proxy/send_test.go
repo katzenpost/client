@@ -222,22 +222,27 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 
 func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, providerKey *ecdh.PrivateKey, mixMap map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey) []byte {
 	var payload []byte
+	t.Logf("provider key %x sphinx packet len %d", providerKey, len(sphinxPacket))
 	_, _, routingInfo, err := sphinx.Unwrap(providerKey, sphinxPacket)
 	require.NoError(err, "sphinx.Unwrap failure")
 	terminalHop := false
-	var mixKey *ecdh.PrivateKey
+	var mixKey *ecdh.PrivateKey = nil
 	for !terminalHop {
+		t.Log("non-terminal hop")
 	L:
 		for _, routingCommand := range routingInfo {
+			t.Log("routingCommands loop")
 			switch cmd := routingCommand.(type) {
 			case *sphinxcommands.NextNodeHop:
+				t.Log("NextNodeHop command")
 				mixKey = mixMap[cmd.ID]
-				t.Logf("NextNodeHop command: %x", cmd.ID)
 				break L
 			case *sphinxcommands.Recipient:
-				t.Logf("Recipient command: %s", cmd.ID)
+				t.Log("Recipient command")
+				terminalHop = true
 				break L
 			default:
+				t.Log("default case")
 				break L
 			}
 		}
@@ -247,7 +252,7 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 	return payload
 }
 
-func NotTestSender(t *testing.T) {
+func TestSender(t *testing.T) {
 	require := require.New(t)
 
 	mixPKI, providerMap, mixMap := newMixPKI(require)
