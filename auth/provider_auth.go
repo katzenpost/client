@@ -20,7 +20,6 @@ package auth
 import (
 	"crypto/subtle"
 
-	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/wire"
 )
@@ -29,33 +28,18 @@ import (
 // which is used to authenticate remote peers (in this case a provider)
 // based on the authenticated key exchange
 // as specified in core/wire/session.go
-type ProviderAuthenticator struct {
-	config  *config.Config
-	keysMap map[[255]byte]*ecdh.PublicKey
-}
-
-// New creates a new ProviderAuthenticator
-func New(config *config.Config) (*ProviderAuthenticator, error) {
-	keysMap, err := config.GetProviderPinnedKeys()
-	if err != nil {
-		return nil, err
-	}
-	authenticator := ProviderAuthenticator{
-		keysMap: keysMap,
-	}
-	return &authenticator, nil
-}
+type ProviderAuthenticator map[[255]byte]*ecdh.PublicKey
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *ProviderAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
 	nameField := [255]byte{}
 	copy(nameField[:], peer.AdditionalData)
-	_, ok := a.keysMap[nameField]
+	_, ok := a[nameField]
 	if !ok {
 		return false
 	}
-	if subtle.ConstantTimeCompare(a.keysMap[nameField].Bytes(), peer.PublicKey.Bytes()) != 1 {
+	if subtle.ConstantTimeCompare(a[nameField].Bytes(), peer.PublicKey.Bytes()) != 1 {
 		return false
 	}
 	return true

@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/katzenpost/client/auth"
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -233,5 +234,5 @@ func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) 
 		copy(nameField[:], name)
 		keysMap[nameField] = publicKey
 	}
-	return keysMap, nil
+	return auth.ProviderAuthenticator(keysMap), nil
 }
