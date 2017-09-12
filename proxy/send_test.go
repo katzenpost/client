@@ -220,35 +220,35 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 	return pool, store, idKey, blockHandler
 }
 
-func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, providerKey *ecdh.PrivateKey, mixMap map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey) []byte {
+func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, senderProviderKey *ecdh.PrivateKey, recieverProviderKey *ecdh.PrivateKey, mixMap map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey, numHops int) []byte {
+	var err error
 	payload := []byte{}
-	t.Logf("provider key %x sphinx packet len %d", providerKey.Bytes(), len(sphinxPacket))
-	_, _, routingInfo, err := sphinx.Unwrap(providerKey, sphinxPacket)
-	require.NoError(err, "sphinx.Unwrap failure")
-	terminalHop := false
-	var mixKey *ecdh.PrivateKey = nil
-	for !terminalHop {
-		t.Log("non-terminal hop")
-		t.Logf("routingInfo: %v", routingInfo)
-	L:
+	var routingInfo []sphinxcommands.RoutingCommand
+	var hopKey *ecdh.PrivateKey = senderProviderKey
+	for i := 0; i < numHops-1; i++ {
+		t.Log("Sphinx Unwrap")
+		payload, _, routingInfo, err = sphinx.Unwrap(hopKey, sphinxPacket)
+		require.NoError(err, "sphinx.Unwrap failure")
+		t.Logf("routingInfo len: %d", len(routingInfo))
 		for _, routingCommand := range routingInfo {
+			require.NotNil(routingCommand, "routing command is nil")
+			t.Logf("routing command: %v", routingCommand)
 			switch cmd := routingCommand.(type) {
 			case *sphinxcommands.NextNodeHop:
 				t.Log("NextNodeHop command")
-				mixKey = mixMap[cmd.ID]
-				break L
+				hopKey = mixMap[cmd.ID]
+			case *sphinxcommands.NodeDelay:
+				t.Log("NodeDelay command")
+			case *sphinxcommands.SURBReply:
+				t.Log("SURB Reply command")
 			case *sphinxcommands.Recipient:
 				t.Log("Recipient command")
-				terminalHop = true
-				break L
-			default:
-				t.Log("default case")
-				break L
 			}
 		}
-		payload, _, routingInfo, err = sphinx.Unwrap(mixKey, sphinxPacket)
-		require.NoError(err, "sphinx.Unwrap failure")
 	}
+	t.Log("final Sphinx Unwrap")
+	payload, _, _, err = sphinx.Unwrap(recieverProviderKey, sphinxPacket)
+	require.NoError(err, "sphinx.Unwrap failure")
 	return payload
 }
 
@@ -256,7 +256,7 @@ func TestSender(t *testing.T) {
 	require := require.New(t)
 
 	mixPKI, providerMap, mixMap := newMixPKI(require)
-	nrHops := 4
+	nrHops := 5
 	lambda := float64(.123)
 	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
 
@@ -306,8 +306,13 @@ func TestSender(t *testing.T) {
 	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
 	require.True(ok, "failed to get SendPacket command")
 	aliceProviderKey := providerMap["acme.com"]
+	bobProviderKey := providerMap["nsa.gov"]
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
-	_ = decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, mixMap)
+	bobsCiphertext := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, mixMap, nrHops)
+	t.Logf("bobsCiphertext len %d", len(bobsCiphertext))
+	//b, _, err := bobBlockHandler.Decrypt(bobsCiphertext)
+	//require.NoError(err, "handler decrypt failure")
+	//t.Logf("block: %s", string(b.Block))
 
 	// Bob sends message to Alice
 	aliceID := [sphinxconstants.RecipientIDLength]byte{}
