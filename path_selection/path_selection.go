@@ -48,7 +48,7 @@ func durationFromFloat(delay float64) time.Duration {
 func getDelays(lambda float64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
-	for i := 0; i < count; i++ {
+	for i := 0; i < count-1; i++ {
 		delays[i] = rand.Exp(cryptRand, lambda)
 	}
 	return delays
@@ -76,7 +76,7 @@ type RouteFactory struct {
 	lambda  float64
 }
 
-// NewRouteFactory creates a new RouteFactory for creating routes
+// New creates a new RouteFactory for creating routes
 func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
 	r := RouteFactory{
 		pki:     pki,
