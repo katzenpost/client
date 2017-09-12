@@ -196,7 +196,6 @@ func (m MockUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
 }
 
 func makeUser(require *require.Assertions, identity string) (*session_pool.SessionPool, *storage.Store, *ecdh.PrivateKey, *block.Handler) {
-
 	mockSession := &MockSession{}
 	pool := &session_pool.SessionPool{
 		Sessions: make(map[string]wire.SessionInterface),
@@ -309,10 +308,10 @@ func TestSender(t *testing.T) {
 	bobProviderKey := providerMap["nsa.gov"]
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
 	bobsCiphertext := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, mixMap, nrHops)
-	t.Logf("bobsCiphertext len %d", len(bobsCiphertext))
-	//b, _, err := bobBlockHandler.Decrypt(bobsCiphertext)
-	//require.NoError(err, "handler decrypt failure")
-	//t.Logf("block: %s", string(b.Block))
+	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
+	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[556:])
+	require.NoError(err, "handler decrypt failure")
+	t.Logf("block: %s", string(b.Block))
 
 	// Bob sends message to Alice
 	aliceID := [sphinxconstants.RecipientIDLength]byte{}
@@ -332,5 +331,5 @@ func TestSender(t *testing.T) {
 	blockID, err = bobStore.PutEgressBlock(&bobStorageBlock)
 	rtt, err = bobSender.Send(blockID, &bobStorageBlock)
 	require.NoError(err, "Send failure")
-	t.Logf("Bob send rtt %d", rtt)
+	t.Logf("Bob send rtt %s", rtt)
 }
