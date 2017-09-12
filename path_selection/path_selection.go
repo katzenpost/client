@@ -48,7 +48,7 @@ func durationFromFloat(delay float64) time.Duration {
 func getDelays(lambda float64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
-	for i := 0; i < count; i++ {
+	for i := 0; i < count-1; i++ {
 		delays[i] = rand.Exp(cryptRand, lambda)
 	}
 	return delays
