@@ -77,6 +77,12 @@ type RouteFactory struct {
 }
 
 // New creates a new RouteFactory for creating routes
+// arguments:
+// * pki - a client PKI interface
+// * numHops - number of total hops in the route including
+//   ingress and egress mixnet Providers.
+// * lambda - parameter to manipulate the exponential distribution
+//   that our per hop Poisson mix delays are sampled from.
 func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
 	r := RouteFactory{
 		pki:     pki,
@@ -91,6 +97,7 @@ func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
 // was selected from the set of descriptors for that layer
 func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProviderName string) ([]*pki.MixDescriptor, error) {
 	var err error
+	// number of mix hops plus two provider hops in total
 	descriptors := make([]*pki.MixDescriptor, r.numHops)
 	descriptors[0], err = r.pki.GetProviderDescriptor(senderProviderName)
 	if err != nil {
@@ -100,10 +107,10 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	if err != nil {
 		return nil, err
 	}
-	for i := 0; i < r.numHops; i++ {
+	for i := 1; i < r.numHops-1; i++ {
 		layerMixes := r.pki.GetMixesInLayer(uint8(i))
 		if len(layerMixes) == 0 {
-			fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
+			return nil, fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
 		}
 		c, err := cryptorand.Int(rand.Reader, big.NewInt(int64(len(layerMixes))))
 		if err != nil {
@@ -124,9 +131,11 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 // of the "Panoramix Mix Network Specification"
 // https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt
 func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, descriptors []*pki.MixDescriptor) ([]*ecdh.PublicKey, error) {
+	fmt.Println("getHopEpochKeys")
 	hopDelay := delays[0]
 	keys := make([]*ecdh.PublicKey, r.numHops)
 	for i := 0; i < len(descriptors); i++ {
+		fmt.Println("for i", i)
 		hopDelay = hopDelay + delays[i]
 		hopDuration := durationFromFloat(hopDelay)
 		if hopDuration < till {

@@ -144,7 +144,7 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[[constants.NodeIDLe
 func TestPathSelection(t *testing.T) {
 	require := require.New(t)
 	mixPKI, _ := newMixPKI(require)
-	nrHops := 4
+	nrHops := 5
 	lambda := float64(.00123)
 	factory := New(mixPKI, nrHops, lambda)
 
@@ -160,6 +160,27 @@ func TestPathSelection(t *testing.T) {
 	t.Logf("built a reply path %s", replyRoute)
 	t.Logf("rtt is %s", rtt)
 	t.Logf("surb ID %v", *surbID)
+}
+
+func TestGetRouteDescriptors(t *testing.T) {
+	require := require.New(t)
+
+	mixPKI, _ := newMixPKI(require)
+	nrHops := 5
+	lambda := float64(.00123)
+	factory := New(mixPKI, nrHops, lambda)
+
+	descriptors, err := factory.getRouteDescriptors("nsa.gov", "acme.com")
+	require.NoError(err, "getRouteDescriptor failure")
+	require.Equal(5, len(descriptors), "returned incorrect length")
+	require.Equal("nsa.gov", descriptors[0].Name, "first descriptor name does not match")
+	require.Equal("acme.com", descriptors[4].Name, "first descriptor name does not match")
+
+	t.Logf("descriptors %d", len(descriptors))
+	for _, descriptor := range descriptors {
+		require.NotNil(descriptor, "is nil; fail")
+		t.Logf("name: %s", descriptor.Name)
+	}
 }
 
 type MockErrorPKI struct {
@@ -204,7 +225,7 @@ func TestGetRouteDescriptorsErrors(t *testing.T) {
 		errProvider:    true,
 		providerErrNum: 5,
 	}
-	nrHops := 4
+	nrHops := 5
 	lambda := float64(.00123)
 	factory := New(&pki, nrHops, lambda)
 

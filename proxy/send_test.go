@@ -221,8 +221,8 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 }
 
 func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, providerKey *ecdh.PrivateKey, mixMap map[[sphinxconstants.NodeIDLength]byte]*ecdh.PrivateKey) []byte {
-	var payload []byte
-	t.Logf("provider key %x sphinx packet len %d", providerKey, len(sphinxPacket))
+	payload := []byte{}
+	t.Logf("provider key %x sphinx packet len %d", providerKey.Bytes(), len(sphinxPacket))
 	_, _, routingInfo, err := sphinx.Unwrap(providerKey, sphinxPacket)
 	require.NoError(err, "sphinx.Unwrap failure")
 	terminalHop := false
@@ -305,8 +305,9 @@ func TestSender(t *testing.T) {
 	require.True(ok, "failed to get MockSession")
 	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
 	require.True(ok, "failed to get SendPacket command")
-	aliceProviderKey := providerMap["acme.com"]
-	_ = decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, mixMap)
+	bobProviderKey := providerMap["nsa.gov"]
+	t.Logf("BOB Provider Key: %x", bobProviderKey.Bytes())
+	_ = decryptSphinxLayers(t, require, sendPacket.SphinxPacket, bobProviderKey, mixMap)
 
 	// Bob sends message to Alice
 	aliceID := [sphinxconstants.RecipientIDLength]byte{}
