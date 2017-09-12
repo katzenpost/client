@@ -76,7 +76,7 @@ type RouteFactory struct {
 	lambda  float64
 }
 
-// NewRouteFactory creates a new RouteFactory for creating routes
+// New creates a new RouteFactory for creating routes
 func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
 	r := RouteFactory{
 		pki:     pki,
