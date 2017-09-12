@@ -229,9 +229,9 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 	var mixKey *ecdh.PrivateKey = nil
 	for !terminalHop {
 		t.Log("non-terminal hop")
+		t.Logf("routingInfo: %v", routingInfo)
 	L:
 		for _, routingCommand := range routingInfo {
-			t.Log("routingCommands loop")
 			switch cmd := routingCommand.(type) {
 			case *sphinxcommands.NextNodeHop:
 				t.Log("NextNodeHop command")
@@ -305,9 +305,9 @@ func TestSender(t *testing.T) {
 	require.True(ok, "failed to get MockSession")
 	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
 	require.True(ok, "failed to get SendPacket command")
-	bobProviderKey := providerMap["nsa.gov"]
-	t.Logf("BOB Provider Key: %x", bobProviderKey.Bytes())
-	_ = decryptSphinxLayers(t, require, sendPacket.SphinxPacket, bobProviderKey, mixMap)
+	aliceProviderKey := providerMap["acme.com"]
+	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
+	_ = decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, mixMap)
 
 	// Bob sends message to Alice
 	aliceID := [sphinxconstants.RecipientIDLength]byte{}
