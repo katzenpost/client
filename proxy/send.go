@@ -120,14 +120,13 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 type SendScheduler struct {
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
-	store        *storage.Store
 	cancellation map[[constants.SURBIDLength]byte]bool
 }
 
 // NewSendScheduler creates a new SendScheduler which is used
 // to implement our Stop and Wait ARQ for sending messages
 // on behalf of one or more user identities
-func NewSendScheduler(senders map[string]*Sender, store *storage.Store) *SendScheduler {
+func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
 	s := SendScheduler{
 		senders:      senders,
 		cancellation: make(map[[constants.SURBIDLength]byte]bool),
