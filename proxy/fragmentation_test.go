@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/katzenpost/client/crypto/block"
-	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +52,7 @@ func TestDeduplication(t *testing.T) {
 func TestFragmentationBig(t *testing.T) {
 	require := require.New(t)
 
-	message := [constants.ForwardPayloadLength*2 + 77]byte{}
+	message := [block.BlockLength*2 + 77]byte{}
 	_, err := rand.Reader.Read(message[:])
 	require.NoError(err, "rand reader failed")
 
@@ -61,15 +60,15 @@ func TestFragmentationBig(t *testing.T) {
 	require.NoError(err, "fragmentMessage failed")
 
 	require.Equal(3, len(blocks), "wrong number of blocks")
-	for _, block := range blocks {
-		require.Equal(constants.ForwardPayloadLength, len(block.Block), "block is incorrect size")
+	for _, b := range blocks {
+		require.Equal(block.BlockLength, len(b.Block), "block is incorrect size")
 	}
 }
 
 func TestFragmentationSmall(t *testing.T) {
 	require := require.New(t)
 
-	message := [constants.ForwardPayloadLength - 22]byte{}
+	message := [block.BlockLength - 22]byte{}
 	_, err := rand.Reader.Read(message[:])
 	require.NoError(err, "rand reader failed")
 
@@ -77,7 +76,7 @@ func TestFragmentationSmall(t *testing.T) {
 	require.NoError(err, "fragmentMessage failed")
 
 	require.Equal(1, len(blocks), "wrong number of blocks")
-	require.Equal(constants.ForwardPayloadLength, len(blocks[0].Block), "block is incorrect size")
+	require.Equal(block.BlockLength, len(blocks[0].Block), "block is incorrect size")
 }
 
 func TestReassembly(t *testing.T) {

@@ -96,7 +96,6 @@ func (b *Block) ToJsonBlock() *JsonBlock {
 
 // ToBytes serializes a Block into bytes
 func (b *Block) ToBytes() []byte {
-	fmt.Printf("b.Block len is %d and max block len is %d\n", len(b.Block), BlockLength)
 	if len(b.Block) > BlockLength {
 		panic(fmt.Sprintf("client/block: oversized Block payload; %d > %d BlockLength", len(b.Block), BlockLength))
 	}

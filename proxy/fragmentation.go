@@ -23,9 +23,9 @@ import (
 	"math"
 	"sort"
 
-	clientconstants "github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
-	"github.com/katzenpost/core/constants"
+	//"github.com/katzenpost/core/constants"
 )
 
 func deduplicateBlocks(blocks []*block.Block) []*block.Block {
@@ -65,13 +65,13 @@ func reassembleMessage(blocks []*block.Block) ([]byte, error) {
 // fragmentMessage fragments a message into a slice of blocks
 func fragmentMessage(randomReader io.Reader, message []byte) ([]*block.Block, error) {
 	blocks := []*block.Block{}
-	if len(message) <= constants.ForwardPayloadLength {
-		id := [clientconstants.MessageIDLength]byte{}
+	if len(message) <= block.BlockLength {
+		id := [constants.MessageIDLength]byte{}
 		_, err := randomReader.Read(id[:])
 		if err != nil {
 			return nil, err
 		}
-		payload := [constants.ForwardPayloadLength]byte{}
+		payload := [block.BlockLength]byte{}
 		copy(payload[:], message)
 		block := block.Block{
 			MessageID:   id,
@@ -81,8 +81,8 @@ func fragmentMessage(randomReader io.Reader, message []byte) ([]*block.Block, er
 		}
 		blocks = append(blocks, &block)
 	} else {
-		totalBlocks := int(math.Ceil(float64(len(message)) / float64(constants.ForwardPayloadLength)))
-		id := [clientconstants.MessageIDLength]byte{}
+		totalBlocks := int(math.Ceil(float64(len(message)) / float64(block.BlockLength)))
+		id := [constants.MessageIDLength]byte{}
 		_, err := randomReader.Read(id[:])
 		if err != nil {
 			return nil, err
@@ -90,11 +90,11 @@ func fragmentMessage(randomReader io.Reader, message []byte) ([]*block.Block, er
 		for i := 0; i < totalBlocks; i++ {
 			var blockPayload []byte
 			if i == totalBlocks-1 {
-				payload := [constants.ForwardPayloadLength]byte{}
+				payload := [block.BlockLength]byte{}
 				blockPayload = payload[:]
-				copy(blockPayload[:], message[i*constants.ForwardPayloadLength:])
+				copy(blockPayload[:], message[i*block.BlockLength:])
 			} else {
-				blockPayload = message[i*constants.ForwardPayloadLength : (i+1)*constants.ForwardPayloadLength]
+				blockPayload = message[i*block.BlockLength : (i+1)*block.BlockLength]
 			}
 			block := block.Block{
 				MessageID:   id,
