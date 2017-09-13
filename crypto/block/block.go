@@ -33,7 +33,7 @@ import (
 
 const (
 	// BlockLength is the maximum payload size of a Block in bytes.
-	BlockLength         = coreConstants.ForwardPayloadLength + (blockCipherOverhead + blockOverhead)
+	BlockLength         = coreConstants.ForwardPayloadLength - (blockCipherOverhead + blockOverhead)
 	blockCipherOverhead = keyLen + macLen + keyLen + macLen // -> e, es, s, ss
 	blockOverhead       = 24
 
