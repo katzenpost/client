@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/katzenpost/client/constants"
@@ -32,7 +33,7 @@ import (
 
 const (
 	// BlockLength is the maximum payload size of a Block in bytes.
-	BlockLength         = coreConstants.ForwardPayloadLength - (blockCipherOverhead + blockOverhead)
+	BlockLength         = coreConstants.ForwardPayloadLength + (blockCipherOverhead + blockOverhead)
 	blockCipherOverhead = keyLen + macLen + keyLen + macLen // -> e, es, s, ss
 	blockOverhead       = 24
 
@@ -96,7 +97,7 @@ func (b *Block) ToJsonBlock() *JsonBlock {
 // ToBytes serializes a Block into bytes
 func (b *Block) ToBytes() []byte {
 	if len(b.Block) > BlockLength {
-		panic("client/block: oversized Block payload")
+		panic(fmt.Sprintf("client/block: oversized Block payload; %d > %d BlockLength", len(b.Block), BlockLength))
 	}
 
 	var zeroBytes [BlockLength]byte
