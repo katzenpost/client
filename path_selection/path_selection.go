@@ -35,7 +35,7 @@ import (
 
 // durationFromFloat returns millisecond time.Duration given a float64
 func durationFromFloat(delay float64) time.Duration {
-	return time.Duration(float64(delay) * float64(time.Millisecond))
+	return time.Duration(delay * float64(time.Millisecond))
 }
 
 // getDelays returns a list of delays from
