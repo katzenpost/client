@@ -131,11 +131,9 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 // of the "Panoramix Mix Network Specification"
 // https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt
 func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, descriptors []*pki.MixDescriptor) ([]*ecdh.PublicKey, error) {
-	fmt.Println("getHopEpochKeys")
 	hopDelay := delays[0]
 	keys := make([]*ecdh.PublicKey, r.numHops)
 	for i := 0; i < len(descriptors); i++ {
-		fmt.Println("for i", i)
 		hopDelay = hopDelay + delays[i]
 		hopDuration := durationFromFloat(hopDelay)
 		if hopDuration < till {

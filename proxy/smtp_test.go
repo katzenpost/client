@@ -123,10 +123,6 @@ func TestSubmitProxy(t *testing.T) {
 		require.NoError(err, "failed sending")
 		err = c.PrintfLine("\r\n.\r\n")
 		require.NoError(err, "failed sending")
-
-		//l, err = c.ReadLine()
-		//require.NoError(err, "failed reading")
-		//t.Logf("S->C: '%s'", l)
 	}()
 
 	wg.Wait()
