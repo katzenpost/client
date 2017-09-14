@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,8 +41,7 @@ func TestSubmitProxy(t *testing.T) {
 	})
 
 	bobEmail := "bob@nsa.gov"
-	//bobPool, bobStore, bobPrivKey, bobBlockHandler := makeUser(require, bobEmail)
-	_, _, bobPrivKey, _ := makeUser(require, bobEmail)
+	_, _, bobPrivKey, bobBlockHandler := makeUser(require, bobEmail)
 
 	userPKI := MockUserPKI{
 		userMap: map[string]*ecdh.PublicKey{
@@ -50,7 +50,8 @@ func TestSubmitProxy(t *testing.T) {
 		},
 	}
 
-	mixPKI, _, _ := newMixPKI(require)
+	mixPKI, providerMap, mixMap := newMixPKI(require)
+
 	nrHops := 5
 	lambda := float64(.123)
 	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
@@ -126,4 +127,20 @@ func TestSubmitProxy(t *testing.T) {
 	}()
 
 	wg.Wait()
+
+	// decrypt Alice's captured sphinx packet
+	session := alicePool.Sessions["alice@acme.com"]
+	mockSession, ok := session.(*MockSession)
+	require.True(ok, "failed to get MockSession")
+	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
+	require.True(ok, "failed to get SendPacket command")
+	aliceProviderKey := providerMap["acme.com"]
+	bobProviderKey := providerMap["nsa.gov"]
+	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
+	bobsCiphertext := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, mixMap, nrHops)
+	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
+	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[556:])
+	require.NoError(err, "handler decrypt failure")
+	t.Logf("block: %s", string(b.Block))
+
 }
