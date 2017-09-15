@@ -21,7 +21,7 @@ import (
 	"io"
 	"testing"
 
-	coreConstants "github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/stretchr/testify/require"
 )
@@ -51,8 +51,9 @@ func TestBlock(t *testing.T) {
 	testSize := func(sz int) {
 		// Encrypt.
 		blkA.Block = payload[:sz]
-		ct := hAlice.Encrypt(idKeyBob.PublicKey(), blkA)
-		require.Len(ct, coreConstants.ForwardPayloadLength)
+		ct, err := hAlice.Encrypt(idKeyBob.PublicKey(), blkA)
+		require.NoError(err, "Block encrypt failure")
+		require.Len(ct, constants.ForwardPayloadLength)
 
 		// Decrypt.
 		blk, peerPk, err := hBob.Decrypt(ct)

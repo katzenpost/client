@@ -18,6 +18,7 @@
 package block
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -55,9 +56,47 @@ type Block struct {
 	// Padding     []byte
 }
 
-func (b *Block) toBytes() []byte {
+// JsonBlock is used to serialize a Block to JSON format
+type JsonBlock struct {
+	MessageID   string
+	TotalBlocks int
+	BlockID     int
+	Block       string
+}
+
+// ToBlock deserializes a JsonBlock into a Block
+func (j *JsonBlock) ToBlock() (*Block, error) {
+	b := Block{
+		TotalBlocks: uint16(j.TotalBlocks),
+		BlockID:     uint16(j.BlockID),
+	}
+	messageID, err := base64.StdEncoding.DecodeString(j.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	copy(b.MessageID[:], messageID)
+	b.Block, err = base64.StdEncoding.DecodeString(j.Block)
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ToJsonBlock is used to serialize a Block into a JsonBlock
+func (b *Block) ToJsonBlock() *JsonBlock {
+	j := JsonBlock{
+		MessageID:   base64.StdEncoding.EncodeToString(b.MessageID[:]),
+		TotalBlocks: int(b.TotalBlocks),
+		BlockID:     int(b.BlockID),
+		Block:       base64.StdEncoding.EncodeToString(b.Block),
+	}
+	return &j
+}
+
+// ToBytes serializes a Block into bytes
+func (b *Block) ToBytes() ([]byte, error) {
 	if len(b.Block) > BlockLength {
-		panic("client/block: oversized Block payload")
+		return nil, errors.New("client/block: oversized Block payload")
 	}
 
 	var zeroBytes [BlockLength]byte
@@ -70,10 +109,12 @@ func (b *Block) toBytes() []byte {
 	out = append(out, b.Block...)
 	out = append(out, zeroBytes[:BlockLength-len(b.Block)]...)
 
-	return out
+	return out, nil
 }
 
-func fromBytes(raw []byte) (*Block, error) {
+// FromBytes deserializes bytes in JSON format to a Block
+// or it returns an error if any
+func FromBytes(raw []byte) (*Block, error) {
 	if len(raw) != blockOverhead+BlockLength {
 		return nil, errors.New("client/block: invalid block size")
 	}
@@ -110,7 +151,7 @@ func NewHandler(identityKey *ecdh.PrivateKey, rand io.Reader) *Handler {
 }
 
 // Encrypt encrypts the Block for the public key.
-func (h *Handler) Encrypt(publicKey *ecdh.PublicKey, b *Block) []byte {
+func (h *Handler) Encrypt(publicKey *ecdh.PublicKey, b *Block) ([]byte, error) {
 	hs := noise.NewHandshakeState(noise.Config{
 		CipherSuite: h.cipherSuite,
 		Random:      h.randReader,
@@ -122,10 +163,13 @@ func (h *Handler) Encrypt(publicKey *ecdh.PublicKey, b *Block) []byte {
 		},
 		PeerStatic: publicKey.Bytes(),
 	})
-	plaintext := b.toBytes()
+	plaintext, err := b.ToBytes()
+	if err != nil {
+		return nil, err
+	}
 	ciphertext := make([]byte, 0, blockCipherOverhead+blockOverhead+len(plaintext))
 	ciphertext, _, _ = hs.WriteMessage(ciphertext, plaintext)
-	return ciphertext
+	return ciphertext, nil
 }
 
 // Decrypt decrypts and authenticates the Block, and returns the de-serialized
@@ -147,7 +191,7 @@ func (h *Handler) Decrypt(ciphertext []byte) (*Block, *ecdh.PublicKey, error) {
 	}
 
 	// Parse the block, serialize the peer public key.
-	b, err := fromBytes(plaintext)
+	b, err := FromBytes(plaintext)
 	if err != nil {
 		return nil, nil, err
 	}
