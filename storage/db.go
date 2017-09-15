@@ -100,8 +100,8 @@ type StorageBlock struct {
 	Block block.Block
 }
 
-// JsonStorageBlock is a json serializable representation of StorageBlock
-type JsonStorageBlock struct {
+// jsonStorageBlock is a json serializable representation of StorageBlock
+type jsonStorageBlock struct {
 	BlockID           string
 	Sender            string
 	SenderProvider    string
@@ -115,8 +115,8 @@ type JsonStorageBlock struct {
 }
 
 // StorageBlock method returns a *StorageBlock or error
-// given the JsonStorageBlock receiver struct
-func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
+// given the jsonStorageBlock receiver struct
+func (j *jsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 	recipientID, err := base64.StdEncoding.DecodeString(j.RecipientID)
 	if err != nil {
 		return nil, err
@@ -152,10 +152,10 @@ func (j *JsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 	return &s, nil
 }
 
-// JsonStorageBlock returns a *JsonStorageBlock
+// ToJsonStorageBlock returns a *jsonStorageBlock
 // given the StorageBlock receiver struct
-func (s *StorageBlock) ToJsonStorageBlock() *JsonStorageBlock {
-	j := JsonStorageBlock{
+func (s *StorageBlock) ToJsonStorageBlock() *jsonStorageBlock {
+	j := jsonStorageBlock{
 		BlockID:           base64.StdEncoding.EncodeToString(s.BlockID[:]),
 		Sender:            s.Sender,
 		SenderProvider:    s.SenderProvider,
@@ -180,7 +180,7 @@ func (s *StorageBlock) ToBytes() ([]byte, error) {
 // FromBytes returns a *StorageBlock or error
 // given a byte slice of json data
 func FromBytes(raw []byte) (*StorageBlock, error) {
-	j := JsonStorageBlock{}
+	j := jsonStorageBlock{}
 	err := json.Unmarshal(raw, &j)
 	if err != nil {
 		return nil, err
