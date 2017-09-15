@@ -158,6 +158,7 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[string]*ecdh.Privat
 
 type MockSession struct {
 	sentCommands []commands.Command
+	recvCommands []commands.Command
 }
 
 func (m *MockSession) Initialize(conn net.Conn) error {
@@ -170,7 +171,16 @@ func (m *MockSession) SendCommand(cmd commands.Command) error {
 }
 
 func (m *MockSession) RecvCommand() (commands.Command, error) {
-	return commands.NoOp{}, nil
+	if len(m.recvCommands) == 0 {
+		return commands.NoOp{}, nil
+	}
+	retCmd := m.recvCommands[len(m.recvCommands)-1]
+	if len(m.recvCommands)-1 == 0 {
+		m.recvCommands = []commands.Command{}
+	} else {
+		m.recvCommands = m.recvCommands[:len(m.recvCommands)-2]
+	}
+	return retCmd, nil
 }
 
 func (m *MockSession) Close() {}
