@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/scheduler"
@@ -28,13 +29,9 @@ import (
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/constants"
+	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
-)
-
-const (
-	RoundTripTimeSlop = 3 * time.Minute // XXX fix me
 )
 
 // Sender is used to send a message over the mixnet
@@ -123,7 +120,7 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 type SendScheduler struct {
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
-	cancellation map[[constants.SURBIDLength]byte]bool
+	cancellation map[[sphinxConstants.SURBIDLength]byte]bool
 }
 
 // NewSendScheduler creates a new SendScheduler which is used
@@ -132,7 +129,7 @@ type SendScheduler struct {
 func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
 	s := SendScheduler{
 		senders:      senders,
-		cancellation: make(map[[constants.SURBIDLength]byte]bool),
+		cancellation: make(map[[sphinxConstants.SURBIDLength]byte]bool),
 	}
 	s.sched = scheduler.New(s.handleSend)
 	return &s
@@ -152,11 +149,11 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 
 // add adds a retransmit job to the scheduler
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.StorageBlock) {
-	s.sched.Add(rtt+RoundTripTimeSlop, storageBlock)
+	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
 }
 
 // Cancel ensures that a given retransmit will not be executed
-func (s *SendScheduler) Cancel(id [constants.SURBIDLength]byte) {
+func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 	s.cancellation[id] = true
 }
 

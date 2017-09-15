@@ -22,8 +22,15 @@ import (
 )
 
 const (
+	// RoundTripTimeSlop represents the time duration added to the Poisson mix strategy
+	// round trip delay for a forward message and it's ACKnowledgement. That is, the
+	// additional time we should wait around for the ACK to arrive before a retransmission.
+	// (XXX: fix me, we need to set this appropriately.
+	// Current value may be too conservative. )
+	RoundTripTimeSlop = 3 * time.Minute
+
 	// DatabaseConnectTimeout is a duration used as the connect timeout
-	// when we access our local databases (for POP3&SMTP proxies)
+	// when we access our local databases (for POP3&SMTP proxies).
 	DatabaseConnectTimeout = 3 * time.Second
 
 	// PoissonLambda is the poisson distribution's lambda parameter
