@@ -1,4 +1,4 @@
-// config.go - mixnet client configuration
+// config_test.go - mixnet client configuration tests
 // Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify

@@ -36,51 +36,50 @@ import (
 var log = logging.MustGetLogger("mixclient")
 
 // Account is used to deserialize the account sections
-// of the configuration file
+// of the configuration file.
 type Account struct {
-	Name     string
+	// Name is the first part of an e-mail address
+	// before the @-sign.
+	Name string
+	// Provider is the second part of an e-mail address
+	// after the @-sign.
 	Provider string
 }
 
 // ProviderPinning is used to deserialize the
 // provider pinning sections of the configuration file
 type ProviderPinning struct {
+	// PublicKeyFile is the file path of the key file
 	PublicKeyFile string
-	Name          string
+	// Name is the name of the Provider
+	Name string
 }
 
-// SMTPProxy is used to deserialize the
-// smtp section of the configuration file
-type SMTPProxy struct {
-	Address string
+// Proxy is used to deserialize the proxy
+// configuration sections of the configuration
+// for the SMTP and POP3 proxies.
+type Proxy struct {
+	// Network is the transport type e.g. "tcp"
 	Network string
-}
-
-// POP3Proxy is used to deserialize the pop3
-// section of the configuration file
-type POP3Proxy struct {
+	// Address is the transport address
 	Address string
-	Network string
 }
 
 // Config is used to deserialize the configuration file
 type Config struct {
-	Account         []Account
+	// Account is the list of accounts represented by this client configuration
+	Account []Account
+	// ProviderPinning is an optional list of pinned Provider public keys
 	ProviderPinning []ProviderPinning
-	SMTPProxy       SMTPProxy
-	POP3Proxy       POP3Proxy
+	// SMTPProxy is the transport configuration of the SMTP submission proxy
+	SMTPProxy Proxy
+	// POP3Proxy is the transport configuration of the POP3 receive proxy
+	POP3Proxy Proxy
 }
 
 // AccountsMap map of email to user private key
 // for each account that is used
 type AccountsMap map[string]*ecdh.PrivateKey
-
-// HasIdentity returns true if a given lower cased identity/email
-// is found in the AccountsMap
-func (a *AccountsMap) HasIdentity(email string) bool {
-	_, ok := (*a)[strings.ToLower(email)]
-	return ok
-}
 
 // GetIdentityKey returns a private key corresponding to the
 // given lower cased identity/email
@@ -116,7 +115,7 @@ func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphr
 	return &key, nil
 }
 
-// GetAccountKeysMap returns an Accounts struct which contains
+// AccountsMap returns an Accounts struct which contains
 // a map of email to private key for each account
 func (c *Config) AccountsMap(keyType, keysDir, passphrase string) (*AccountsMap, error) {
 	accounts := make(AccountsMap)
