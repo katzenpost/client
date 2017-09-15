@@ -17,10 +17,12 @@
 package proxy
 
 import (
+	"io/ioutil"
 	"net"
 	"net/textproto"
 	"sync"
 	"testing"
+	//"time"
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/path_selection"
@@ -30,7 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSubmitProxy(t *testing.T) {
+func TestEndToEndProxy(t *testing.T) {
 	require := require.New(t)
 
 	aliceEmail := "alice@acme.com"
@@ -41,7 +43,7 @@ func TestSubmitProxy(t *testing.T) {
 	})
 
 	bobEmail := "bob@nsa.gov"
-	_, _, bobPrivKey, bobBlockHandler := makeUser(require, bobEmail)
+	bobPool, bobStore, bobPrivKey, bobBlockHandler := makeUser(require, bobEmail)
 
 	userPKI := MockUserPKI{
 		userMap: map[string]*ecdh.PublicKey{
@@ -129,10 +131,10 @@ func TestSubmitProxy(t *testing.T) {
 	wg.Wait()
 
 	// decrypt Alice's captured sphinx packet
-	session := alicePool.Sessions["alice@acme.com"]
-	mockSession, ok := session.(*MockSession)
+	aliceSession := alicePool.Sessions["alice@acme.com"]
+	mockAliceSession, ok := aliceSession.(*MockSession)
 	require.True(ok, "failed to get MockSession")
-	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
+	sendPacket, ok := mockAliceSession.sentCommands[0].(*commands.SendPacket)
 	require.True(ok, "failed to get SendPacket command")
 	aliceProviderKey := providerMap["acme.com"]
 	bobProviderKey := providerMap["nsa.gov"]
@@ -143,4 +145,97 @@ func TestSubmitProxy(t *testing.T) {
 	require.NoError(err, "handler decrypt failure")
 	t.Logf("block: %s", string(b.Block))
 
+	// XXX fetch message
+	bobStore.CreateAccountBuckets([]string{bobEmail})
+	bobFetcher := NewFetcher(bobEmail, bobPool, bobStore, bobBlockHandler)
+
+	bobSession := bobPool.Sessions["bob@nsa.gov"]
+	mockBobSession, ok := bobSession.(*MockSession)
+	require.True(ok, "failed to get MockSession")
+	msgCmd := commands.Message{
+		QueueSizeHint: 0,
+		Sequence:      0,
+		Payload:       bobsCiphertext[556:],
+	}
+	mockBobSession.recvCommands = append(mockBobSession.recvCommands, msgCmd)
+
+	queueHintSize, err := bobFetcher.Fetch()
+	require.NoError(err, "Fetch failure")
+
+	t.Logf("queueHintSize %d", queueHintSize)
+	//fetchers := make(map[string]*Fetcher)
+	//fetchers[bobEmail] = bobFetcher
+	//duration := time.Second * 7 // XXX
+	//periodicRetriever := NewFetchScheduler(fetchers, duration)
+	//periodicRetriever.Start()
+
+	pop3Service := NewPop3Service(bobStore)
+	bobPop3ServerConn, bobPop3ClientConn := net.Pipe()
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		defer bobPop3ServerConn.Close()
+		defer bobPop3ClientConn.Close()
+
+		err := pop3Service.HandleConnection(bobPop3ServerConn)
+		require.NoError(err, "pop3 service HandleConnection failure")
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer bobPop3ServerConn.Close()
+		defer bobPop3ClientConn.Close()
+
+		c := textproto.NewConn(bobPop3ClientConn)
+		defer c.Close()
+
+		// Server speaks first, expecting a banner.
+		l, err := c.ReadLine()
+		require.NoError(err, "failed reading banner")
+		t.Logf("S->C: '%s'", l)
+
+		// USER
+		err = c.PrintfLine("USER %s", bobEmail)
+		require.NoError(err, "failed sending USER")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading USER response")
+		t.Logf("S->C: '%s'", l)
+
+		// PASS
+		bobsPassword := "any_password"
+		err = c.PrintfLine("PASS %s", bobsPassword)
+		require.NoError(err, "failed sending PASS")
+		l, err = c.ReadLine()
+		require.NoError(err, "failed reading PASS response")
+		t.Logf("S->C: '%s'", l)
+
+		// CAPA
+		err = c.PrintfLine("CAPA")
+		require.NoError(err, "failed sending CAPA")
+		dr := c.DotReader()
+		bl, err := ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading CAPA response")
+		t.Logf("S->C: '%s'", bl)
+
+		// LIST
+		err = c.PrintfLine("LIST")
+		require.NoError(err, "failed sending LIST")
+		dr = c.DotReader()
+		bl, err = ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading LIST response")
+		t.Logf("S->C: '%s'", bl)
+
+		// RETR
+		err = c.PrintfLine("RETR 1")
+		require.NoError(err, "failed sending RETR")
+		dr = c.DotReader()
+		bl, err = ioutil.ReadAll(dr)
+		require.NoError(err, "failed reading RETR response")
+		t.Logf("S->C: '%s'", bl)
+
+	}()
+
+	wg.Wait()
 }
