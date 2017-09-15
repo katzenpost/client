@@ -147,7 +147,12 @@ func TestEndToEndProxy(t *testing.T) {
 
 	// XXX fetch message
 	bobStore.CreateAccountBuckets([]string{bobEmail})
-	bobFetcher := NewFetcher(bobEmail, bobPool, bobStore, bobBlockHandler)
+	bobFetcher := Fetcher{
+		Identity: bobEmail,
+		pool:     bobPool,
+		store:    bobStore,
+		handler:  bobBlockHandler,
+	}
 
 	bobSession := bobPool.Sessions["bob@nsa.gov"]
 	mockBobSession, ok := bobSession.(*MockSession)
