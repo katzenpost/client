@@ -380,13 +380,17 @@ func (s *Store) GetIngressBlocks(accountName string, messageID [constants.Messag
 		}
 		c := b.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
-			b, err := block.FromBytes(v)
+			newVal := make([]byte, len(v))
+			copy(newVal, v)
+			b, err := block.FromBytes(newVal)
 			if err != nil {
 				return err
 			}
 			if b.MessageID == messageID {
 				blocks = append(blocks, b)
-				keys = append(keys, k)
+				newKey := make([]byte, len(k))
+				copy(newKey, k)
+				keys = append(keys, newKey)
 			}
 		}
 		return nil
@@ -428,7 +432,9 @@ func (s *Store) Messages(accountName string) ([][]byte, error) {
 		}
 		c := b.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
-			messages = append(messages, v)
+			newVal := make([]byte, len(v))
+			copy(newVal, v)
+			messages = append(messages, newVal)
 		}
 		return nil
 	}
