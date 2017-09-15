@@ -40,12 +40,13 @@ type Fetcher struct {
 }
 
 // NewFetcher creates a new Fetcher
-func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.Store) *Fetcher {
+func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.Store, handler *block.Handler) *Fetcher {
 	fetcher := Fetcher{
 		Identity: identity,
 		sequence: uint32(0),
 		pool:     pool,
 		store:    store,
+		handler:  handler,
 	}
 	return &fetcher
 }
