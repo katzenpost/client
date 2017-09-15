@@ -18,6 +18,7 @@
 package block
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -55,7 +56,45 @@ type Block struct {
 	// Padding     []byte
 }
 
-func (b *Block) toBytes() []byte {
+// JsonBlock is used to serialize a Block to JSON format
+type JsonBlock struct {
+	MessageID   string
+	TotalBlocks int
+	BlockID     int
+	Block       string
+}
+
+// ToBlock deserializes a JsonBlock into a Block
+func (j *JsonBlock) ToBlock() (*Block, error) {
+	b := Block{
+		TotalBlocks: uint16(j.TotalBlocks),
+		BlockID:     uint16(j.BlockID),
+	}
+	messageID, err := base64.StdEncoding.DecodeString(j.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	copy(b.MessageID[:], messageID)
+	b.Block, err = base64.StdEncoding.DecodeString(j.Block)
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ToJsonBlock is used to serialize a Block into a JsonBlock
+func (b *Block) ToJsonBlock() *JsonBlock {
+	j := JsonBlock{
+		MessageID:   base64.StdEncoding.EncodeToString(b.MessageID[:]),
+		TotalBlocks: int(b.TotalBlocks),
+		BlockID:     int(b.BlockID),
+		Block:       base64.StdEncoding.EncodeToString(b.Block),
+	}
+	return &j
+}
+
+// ToBytes serializes a Block into bytes
+func (b *Block) ToBytes() []byte {
 	if len(b.Block) > BlockLength {
 		panic("client/block: oversized Block payload")
 	}
@@ -73,7 +112,9 @@ func (b *Block) toBytes() []byte {
 	return out
 }
 
-func fromBytes(raw []byte) (*Block, error) {
+// FromBytes deserializes bytes in JSON format to a Block
+// or it returns an error if any
+func FromBytes(raw []byte) (*Block, error) {
 	if len(raw) != blockOverhead+BlockLength {
 		return nil, errors.New("client/block: invalid block size")
 	}
@@ -122,7 +163,7 @@ func (h *Handler) Encrypt(publicKey *ecdh.PublicKey, b *Block) []byte {
 		},
 		PeerStatic: publicKey.Bytes(),
 	})
-	plaintext := b.toBytes()
+	plaintext := b.ToBytes()
 	ciphertext := make([]byte, 0, blockCipherOverhead+blockOverhead+len(plaintext))
 	ciphertext, _, _ = hs.WriteMessage(ciphertext, plaintext)
 	return ciphertext
@@ -147,7 +188,7 @@ func (h *Handler) Decrypt(ciphertext []byte) (*Block, *ecdh.PublicKey, error) {
 	}
 
 	// Parse the block, serialize the peer public key.
-	b, err := fromBytes(plaintext)
+	b, err := FromBytes(plaintext)
 	if err != nil {
 		return nil, nil, err
 	}
