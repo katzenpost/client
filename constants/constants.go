@@ -38,6 +38,14 @@ const (
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
 
+	// PrivateKey is used in our key file naming convention to indicate
+	// that the given key is private.
+	PrivateKey = "private"
+
+	// PublicKey is used in our key file naming convention to indicate
+	// that the given key is public.
+	PublicKey = "public"
+
 	// EndToEndKeyType is the string representing the end to end
 	// messaging key type
 	EndToEndKeyType = "e2e"

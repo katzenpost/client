@@ -92,11 +92,33 @@ func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
 }
 
 // CreateKeyFileName composes a filename given several arguments
-func CreateKeyFileName(keysDir, prefix, name, provider, keyType string) string {
-	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, prefix, name, provider, keyType)
+// arguments:
+// * keysDir - a filepath to the directory containing the key files.
+//   must not end in a forward slash /.
+// * keyType - indicates weather the key is used for end to end crypto or
+//   wire protocol link layer crypto and should be set to one of the following:
+//   * constants.EndToEndKeyType
+//   * constants.LinkLayerKeyType
+// * name - name of the account, first section of an e-mail address before the @-sign.
+// * provider - the Provider name, the second section of an e-mail address after the @-sign.
+// * keyStatus - indicates weather the key is public or private and should be set to
+//   on of the following constants:
+//   * constants.PrivateKey
+//   * constants.PublicKey
+func CreateKeyFileName(keysDir, keyType, name, provider, keyStatus string) string {
+	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, keyType, name, provider, keyStatus)
 }
 
 // GetAccountKey decrypts and returns a private key material or an error
+// arguments:
+// * keyType - indicates weather the key is used for end to end crypto or
+//   wire protocol link layer crypto and should be set to one of the following:
+//   * constants.EndToEndKeyType
+//   * constants.LinkLayerKeyType
+// * account - an instance of the Account struct
+// * keysDir - a filepath to the directory containing the key files.
+//   must not end in a forward slash /.
+// * passphrase - a secret passphrase which is used to decrypt keys on disk
 func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
 	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, "private")
 	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
@@ -117,6 +139,14 @@ func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphr
 
 // AccountsMap returns an Accounts struct which contains
 // a map of email to private key for each account
+// arguments:
+// * keyType - indicates weather the key is used for end to end crypto or
+//   wire protocol link layer crypto and should be set to one of the following:
+//   * constants.EndToEndKeyType
+//   * constants.LinkLayerKeyType
+// * keysDir - a filepath to the directory containing the key files.
+//   must not end in a forward slash /.
+// * passphrase - a secret passphrase which is used to decrypt keys on disk
 func (c *Config) AccountsMap(keyType, keysDir, passphrase string) (*AccountsMap, error) {
 	accounts := make(AccountsMap)
 	for _, account := range c.Account {
