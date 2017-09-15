@@ -249,7 +249,7 @@ func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 				return err
 			}
 			sender = senderAddr.Address
-			if !p.accounts.HasIdentity(sender) {
+			if _, err = p.accounts.GetIdentityKey(sender); err != nil {
 				log.Debug("client identity not found")
 				smtpConn.Reject()
 				return nil
