@@ -103,8 +103,8 @@ func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
 // * provider - the Provider name, the second section of an e-mail address after the @-sign.
 // * keyStatus - indicates weather the key is public or private and should be set to
 //   on of the following constants:
-//   * constants.PrivateKey
-//   * constants.PublicKey
+//   * constants.KeyStatusPrivate
+//   * constants.KeyStatusPublic
 func CreateKeyFileName(keysDir, keyType, name, provider, keyStatus string) string {
 	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, keyType, name, provider, keyStatus)
 }
@@ -120,10 +120,10 @@ func CreateKeyFileName(keysDir, keyType, name, provider, keyStatus string) strin
 //   must not end in a forward slash /.
 // * passphrase - a secret passphrase which is used to decrypt keys on disk
 func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
-	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, "private")
+	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, constants.KeyStatusPrivate)
 	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
 	v := vault.Vault{
-		Type:       "private",
+		Type:       constants.KeyStatusPrivate,
 		Email:      email,
 		Passphrase: passphrase,
 		Path:       privateKeyFile,
@@ -173,7 +173,7 @@ func (c *Config) AccountIdentities() []string {
 
 // writeKey generates and encrypts a key to disk
 func writeKey(keysDir, prefix, name, provider, passphrase string) error {
-	privateKeyFile := CreateKeyFileName(keysDir, prefix, name, provider, "private")
+	privateKeyFile := CreateKeyFileName(keysDir, prefix, name, provider, constants.KeyStatusPrivate)
 	_, err := os.Stat(privateKeyFile)
 	if os.IsNotExist(err) {
 		privateKey, err := ecdh.NewKeypair(rand.Reader)
@@ -182,7 +182,7 @@ func writeKey(keysDir, prefix, name, provider, passphrase string) error {
 		}
 		email := fmt.Sprintf("%s@%s", name, provider)
 		v := vault.Vault{
-			Type:       "private",
+			Type:       constants.KeyStatusPrivate,
 			Email:      email,
 			Passphrase: passphrase,
 			Path:       privateKeyFile,

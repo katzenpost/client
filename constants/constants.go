@@ -47,11 +47,11 @@ const (
 
 	// PrivateKey is used in our key file naming convention to indicate
 	// that the given key is private.
-	PrivateKey = "private"
+	KeyStatusPrivate = "private"
 
 	// PublicKey is used in our key file naming convention to indicate
 	// that the given key is public.
-	PublicKey = "public"
+	KeyStatusPublic = "public"
 
 	// EndToEndKeyType is the string representing the end to end
 	// messaging key type
