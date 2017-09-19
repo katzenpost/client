@@ -39,6 +39,16 @@ type Fetcher struct {
 	handler   *block.Handler
 }
 
+func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.Store, scheduler *SendScheduler, handler *block.Handler) *Fetcher {
+	return &Fetcher{
+		Identity:  identity,
+		pool:      pool,
+		store:     store,
+		scheduler: scheduler,
+		handler:   handler,
+	}
+}
+
 // Fetch fetches a message and returns
 // the queue size hint or an error.
 // The fetched message is then handled
