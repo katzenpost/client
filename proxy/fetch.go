@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire/commands"
 )
 
@@ -107,6 +108,13 @@ func (f *Fetcher) Fetch() (uint8, error) {
 // processAck is used by our Stop and Wait ARQ to cancel
 // the retransmit timer
 func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) error {
+	// Ensure payload bytes are all zeros.
+	// see Panoramix Mix Network End-to-end Protocol Specification
+	// https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
+	// Section 4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
+	if !utils.CtIsZero(payload) {
+		return errors.New("ACK payload bytes are not all 0x00")
+	}
 	f.scheduler.Cancel(id)
 	return nil
 }

@@ -154,7 +154,16 @@ func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.StorageBloc
 
 // Cancel ensures that a given retransmit will not be executed
 func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
-	s.cancellation[id] = true
+	_, ok := s.cancellation[id]
+	if ok {
+		if s.cancellation[id] {
+			log.Errorf("SendScheduler Cancellation with SURB ID %x already cancelled", id)
+		} else {
+			s.cancellation[id] = true
+		}
+	} else {
+		log.Error("SendScheduler Cancellation received an unknown SURB ID")
+	}
 }
 
 // handleSend is called by the scheduler to perform
