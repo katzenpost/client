@@ -47,7 +47,7 @@ func TestDBBasics(t *testing.T) {
 		Block:       []byte(`"The time has come," the Walrus said`),
 	}
 	id := []byte{1, 2, 3, 4, 5, 6}
-	s := StorageBlock{
+	s := EgressBlock{
 		SenderProvider:    "acme.com",
 		RecipientProvider: "nsa.gov",
 		RecipientID:       recipientID,

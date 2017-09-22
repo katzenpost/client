@@ -65,7 +65,7 @@ func NewSender(identity string, pool *session_pool.SessionPool, store *storage.S
 
 // composeSphinxPacket creates a SendPacket wire protocol command with
 // a Sphinx packet and SURB header
-func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
+func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
 	forwardPath, replyPath, surbID, rtt, err := s.routeFactory.Build(storageBlock.SenderProvider, storageBlock.RecipientProvider, storageBlock.RecipientID)
 	if err != nil {
 		return nil, rtt, err
@@ -92,7 +92,7 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 }
 
 // Send sends an encrypted block over the mixnet
-func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock) (time.Duration, error) {
+func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) (time.Duration, error) {
 	var rtt time.Duration
 	receiverKey, err := s.userPKI.GetKey(storageBlock.Recipient)
 	if err != nil {
@@ -136,7 +136,7 @@ func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
 }
 
 // Send sends the given block and adds a retransmit job to the scheduler
-func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.StorageBlock) error {
+func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) error {
 	rtt, err := s.senders[sender].Send(blockID, storageBlock)
 	if err != nil {
 		return err
@@ -148,7 +148,7 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 }
 
 // add adds a retransmit job to the scheduler
-func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.StorageBlock) {
+func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.EgressBlock) {
 	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
 }
 
@@ -169,7 +169,7 @@ func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 // handleSend is called by the scheduler to perform
 // a retransmit
 func (s *SendScheduler) handleSend(task interface{}) {
-	storageBlock, ok := task.(*storage.StorageBlock)
+	storageBlock, ok := task.(*storage.EgressBlock)
 	if !ok {
 		log.Error("SendScheduler got invalid task from priority scheduler.")
 		return

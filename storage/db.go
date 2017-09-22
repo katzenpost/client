@@ -59,10 +59,9 @@ func pop3BucketNameFromAccount(accountName string) []byte {
 	return []byte(fmt.Sprintf("%s_pop3", accountName))
 }
 
-// StorageBlock contains an encrypted message fragment
+// EgressBlock contains an encrypted message fragment
 // and other fields needed to send it to the destination
-type StorageBlock struct {
-
+type EgressBlock struct {
 	// BlockID is used to uniquely identify storage blocks
 	BlockID [BlockIDLength]byte
 
@@ -100,8 +99,8 @@ type StorageBlock struct {
 	Block block.Block
 }
 
-// jsonStorageBlock is a json serializable representation of StorageBlock
-type jsonStorageBlock struct {
+// jsonEgressBlock is a json serializable representation of EgressBlock
+type jsonEgressBlock struct {
 	BlockID           string
 	Sender            string
 	SenderProvider    string
@@ -114,9 +113,9 @@ type jsonStorageBlock struct {
 	JsonBlock         *block.JsonBlock
 }
 
-// StorageBlock method returns a *StorageBlock or error
-// given the jsonStorageBlock receiver struct
-func (j *jsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
+// EgressBlock method returns a *EgressBlock or error
+// given the jsonEgressBlock receiver struct
+func (j *jsonEgressBlock) ToEgressBlock() (*EgressBlock, error) {
 	recipientID, err := base64.StdEncoding.DecodeString(j.RecipientID)
 	if err != nil {
 		return nil, err
@@ -137,7 +136,7 @@ func (j *jsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := StorageBlock{
+	s := EgressBlock{
 		Sender:            j.Sender,
 		SenderProvider:    j.SenderProvider,
 		Recipient:         j.Recipient,
@@ -152,10 +151,10 @@ func (j *jsonStorageBlock) ToStorageBlock() (*StorageBlock, error) {
 	return &s, nil
 }
 
-// ToJsonStorageBlock returns a *jsonStorageBlock
-// given the StorageBlock receiver struct
-func (s *StorageBlock) ToJsonStorageBlock() *jsonStorageBlock {
-	j := jsonStorageBlock{
+// ToJsonEgressBlock returns a *jsonEgressBlock
+// given the EgressBlock receiver struct
+func (s *EgressBlock) ToJsonEgressBlock() *jsonEgressBlock {
+	j := jsonEgressBlock{
 		BlockID:           base64.StdEncoding.EncodeToString(s.BlockID[:]),
 		Sender:            s.Sender,
 		SenderProvider:    s.SenderProvider,
@@ -170,22 +169,22 @@ func (s *StorageBlock) ToJsonStorageBlock() *jsonStorageBlock {
 	return &j
 }
 
-// Bytes returns the given StorageBlock receiver struct
+// Bytes returns the given EgressBlock receiver struct
 // into a byte slice of json
-func (s *StorageBlock) ToBytes() ([]byte, error) {
-	j := s.ToJsonStorageBlock()
+func (s *EgressBlock) ToBytes() ([]byte, error) {
+	j := s.ToJsonEgressBlock()
 	return json.Marshal(j)
 }
 
-// FromBytes returns a *StorageBlock or error
+// FromBytes returns a *EgressBlock or error
 // given a byte slice of json data
-func FromBytes(raw []byte) (*StorageBlock, error) {
-	j := jsonStorageBlock{}
+func FromBytes(raw []byte) (*EgressBlock, error) {
+	j := jsonEgressBlock{}
 	err := json.Unmarshal(raw, &j)
 	if err != nil {
 		return nil, err
 	}
-	s, err := j.ToStorageBlock()
+	s, err := j.ToEgressBlock()
 	return s, err
 }
 
@@ -214,16 +213,16 @@ func (s *Store) Close() error {
 
 // egress storage
 
-// Put puts a given StorageBlock into our db
+// Put puts a given EgressBlock into our db
 // and returns a block ID which is it's key
-func (s *Store) PutEgressBlock(b *StorageBlock) (*[BlockIDLength]byte, error) {
+func (s *Store) PutEgressBlock(b *EgressBlock) (*[BlockIDLength]byte, error) {
 	blockID := [BlockIDLength]byte{}
 	transaction := func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(EgressBucketName))
 		if err != nil {
 			return err
 		}
-		// Generate ID for the StorageBlock.
+		// Generate ID for the EgressBlock.
 		// This returns an error only if the Tx is closed or not writeable.
 		// That can't happen in an Update() call so I ignore the error check.
 		id, _ := bucket.NextSequence()
@@ -245,7 +244,7 @@ func (s *Store) PutEgressBlock(b *StorageBlock) (*[BlockIDLength]byte, error) {
 }
 
 // Update is used to update a specified storage block
-func (s *Store) Update(blockID *[BlockIDLength]byte, b *StorageBlock) error {
+func (s *Store) Update(blockID *[BlockIDLength]byte, b *EgressBlock) error {
 	transaction := func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(EgressBucketName))
 		if bucket == nil {
@@ -303,7 +302,7 @@ func (s *Store) Get(blockID *[BlockIDLength]byte) ([]byte, error) {
 	return ret, nil
 }
 
-// Remove removes a specific *StorageBlock from our db
+// Remove removes a specific *EgressBlock from our db
 // specified by the SURB ID
 func (s *Store) Remove(blockID *[BlockIDLength]byte) error {
 	var err error

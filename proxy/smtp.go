@@ -211,7 +211,7 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 		}
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
-		storageBlock := storage.StorageBlock{
+		storageBlock := storage.EgressBlock{
 			Sender:            sender,
 			SenderProvider:    senderProvider,
 			Recipient:         receiver,

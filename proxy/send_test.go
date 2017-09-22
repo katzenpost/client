@@ -295,7 +295,7 @@ func TestSender(t *testing.T) {
 		TotalBlocks: 1,
 		Block:       []byte("yo bobby, what up?"),
 	}
-	aliceStorageBlock := storage.StorageBlock{
+	aliceEgressBlock := storage.EgressBlock{
 		Sender:            "alice@acme.com",
 		SenderProvider:    "acme.com",
 		Recipient:         "bob@nsa.gov",
@@ -303,8 +303,8 @@ func TestSender(t *testing.T) {
 		RecipientID:       bobID,
 		Block:             toBobBlock,
 	}
-	blockID, err := aliceStore.PutEgressBlock(&aliceStorageBlock)
-	rtt, err := aliceSender.Send(blockID, &aliceStorageBlock)
+	blockID, err := aliceStore.PutEgressBlock(&aliceEgressBlock)
+	rtt, err := aliceSender.Send(blockID, &aliceEgressBlock)
 	require.NoError(err, "Send failure")
 	t.Logf("Alice send rtt %d", rtt)
 
@@ -330,7 +330,7 @@ func TestSender(t *testing.T) {
 		TotalBlocks: 1,
 		Block:       []byte("Alice, I have the documents you requested."),
 	}
-	bobStorageBlock := storage.StorageBlock{
+	bobEgressBlock := storage.EgressBlock{
 		Sender:            "bob@nsa.gov",
 		SenderProvider:    "nsa.gov",
 		Recipient:         "alice@acme.com",
@@ -338,8 +338,8 @@ func TestSender(t *testing.T) {
 		RecipientID:       aliceID,
 		Block:             toAliceBlock,
 	}
-	blockID, err = bobStore.PutEgressBlock(&bobStorageBlock)
-	rtt, err = bobSender.Send(blockID, &bobStorageBlock)
+	blockID, err = bobStore.PutEgressBlock(&bobEgressBlock)
+	rtt, err = bobSender.Send(blockID, &bobEgressBlock)
 	require.NoError(err, "Send failure")
 	t.Logf("Bob send rtt %s", rtt)
 }
