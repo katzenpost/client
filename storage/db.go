@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/boltdb/bolt"
+	"github.com/coreos/bbolt"
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"

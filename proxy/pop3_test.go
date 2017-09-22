@@ -26,7 +26,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/boltdb/bolt"
+	"github.com/coreos/bbolt"
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/storage"
 	"github.com/stretchr/testify/require"
