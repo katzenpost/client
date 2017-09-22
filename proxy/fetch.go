@@ -127,17 +127,29 @@ func (f *Fetcher) processMessage(payload []byte) error {
 	if err != nil {
 		return err
 	}
-	err = f.store.PutIngressBlock(f.Identity, b)
+	s := [32]byte{}
+	// XXX or should we use the sender's static public key
+	// returned from the above Decrypt operation instead of
+	// the slice of the ciphertext payload?
+	copy(s[:], payload[47:79])
+	ingressBlock := storage.IngressBlock{
+		S:     s,
+		Block: b,
+	}
+	err = f.store.PutIngressBlock(f.Identity, &ingressBlock)
 	if err != nil {
 		return err
 	}
-	blocks, blockKeys, err := f.store.GetIngressBlocks(f.Identity, b.MessageID)
+	ingressBlocks, blockKeys, err := f.store.GetIngressBlocks(f.Identity, b.MessageID)
 	if err != nil {
 		return err
 	}
-	blocks = deduplicateBlocks(blocks)
-	if len(blocks) == int(b.TotalBlocks) {
-		message, err := reassembleMessage(blocks)
+	ingressBlocks = deduplicateBlocks(ingressBlocks)
+	if len(ingressBlocks) == int(b.TotalBlocks) {
+		if !validBlocks(ingressBlocks) {
+			return errors.New("one or more blocks are invalid")
+		}
+		message, err := reassembleMessage(ingressBlocks)
 		if err != nil {
 			return err
 		}

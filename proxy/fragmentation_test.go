@@ -20,32 +20,193 @@ package proxy
 import (
 	"testing"
 
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
+	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
 
+func TestIngressBlockValidation(t *testing.T) {
+	require := require.New(t)
+
+	staticKey := [32]byte{}
+	messageID := [constants.MessageIDLength]byte{}
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				MessageID: messageID,
+				BlockID:   0,
+				Block:     []byte{1, 2, 3},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				MessageID: messageID,
+				BlockID:   2,
+				Block:     []byte{7, 8, 9},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				MessageID: messageID,
+				BlockID:   1,
+				Block:     []byte{4, 5, 6},
+			},
+		},
+	}
+	isValid := validBlocks(blocks)
+	require.True(isValid, "expected to be true")
+}
+
+func TestIngressBlockValidationFail1(t *testing.T) {
+	require := require.New(t)
+
+	staticKey := [32]byte{}
+	messageID1 := [constants.MessageIDLength]byte{}
+	messageID2 := [constants.MessageIDLength]byte{}
+	_, err := rand.Reader.Read(messageID2[:])
+	require.NoError(err, "rand reader failed")
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				MessageID: messageID1,
+				BlockID:   0,
+				Block:     []byte{1, 2, 3},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				MessageID: messageID2,
+				BlockID:   2,
+				Block:     []byte{7, 8, 9},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				MessageID: messageID1,
+				BlockID:   1,
+				Block:     []byte{4, 5, 6},
+			},
+		},
+	}
+	isValid := validBlocks(blocks)
+	require.False(isValid, "validBlocks should've failed")
+}
+
+func TestIngressBlockValidationFail2(t *testing.T) {
+	require := require.New(t)
+
+	staticKey1 := [32]byte{}
+	staticKey2 := [32]byte{}
+	_, err := rand.Reader.Read(staticKey2[:])
+	require.NoError(err, "rand reader failed")
+	messageID1 := [constants.MessageIDLength]byte{}
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey1,
+			Block: &block.Block{
+				MessageID: messageID1,
+				BlockID:   0,
+				Block:     []byte{1, 2, 3},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey2,
+			Block: &block.Block{
+				MessageID: messageID1,
+				BlockID:   2,
+				Block:     []byte{7, 8, 9},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey1,
+			Block: &block.Block{
+				MessageID: messageID1,
+				BlockID:   1,
+				Block:     []byte{4, 5, 6},
+			},
+		},
+	}
+	isValid := validBlocks(blocks)
+	require.False(isValid, "validBlocks should've failed")
+}
+
+func TestIngressBlockValidationFail3(t *testing.T) {
+	require := require.New(t)
+
+	staticKey1 := [32]byte{}
+	messageID1 := [constants.MessageIDLength]byte{}
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey1,
+			Block: &block.Block{
+				TotalBlocks: 3,
+				MessageID:   messageID1,
+				BlockID:     0,
+				Block:       []byte{1, 2, 3},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey1,
+			Block: &block.Block{
+				TotalBlocks: 3,
+				MessageID:   messageID1,
+				BlockID:     2,
+				Block:       []byte{7, 8, 9},
+			},
+		},
+		&storage.IngressBlock{
+			S: staticKey1,
+			Block: &block.Block{
+				TotalBlocks: 1,
+				MessageID:   messageID1,
+				BlockID:     1,
+				Block:       []byte{4, 5, 6},
+			},
+		},
+	}
+	isValid := validBlocks(blocks)
+	require.False(isValid, "validBlocks should've failed")
+}
+
 func TestDeduplication(t *testing.T) {
 	require := require.New(t)
 
-	blocks := []*block.Block{
-		&block.Block{
-			BlockID: 0,
-			Block:   []byte{1, 2, 3},
+	staticKey := [32]byte{}
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 0,
+				Block:   []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			BlockID: 0,
-			Block:   []byte{1, 2, 3},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 0,
+				Block:   []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			BlockID: 1,
-			Block:   []byte{4, 5, 6},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 1,
+				Block:   []byte{4, 5, 6},
+			},
 		},
 	}
 	deduped := deduplicateBlocks(blocks)
 	require.NotEqual(len(deduped), len(blocks), "deduplicateBlocks failed")
 	for _, d := range deduped {
-		t.Logf("deduped id %d", d.BlockID)
+		t.Logf("deduped id %d", d.Block.BlockID)
 	}
 }
 
@@ -82,18 +243,28 @@ func TestFragmentationSmall(t *testing.T) {
 func TestReassembly(t *testing.T) {
 	require := require.New(t)
 
-	blocks := []*block.Block{
-		&block.Block{
-			BlockID: 2,
-			Block:   []byte{7, 8, 9},
+	staticKey := [32]byte{}
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 2,
+				Block:   []byte{7, 8, 9},
+			},
 		},
-		&block.Block{
-			BlockID: 0,
-			Block:   []byte{1, 2, 3},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 0,
+				Block:   []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			BlockID: 1,
-			Block:   []byte{4, 5, 6},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 1,
+				Block:   []byte{4, 5, 6},
+			},
 		},
 	}
 	message, err := reassembleMessage(blocks)
@@ -104,14 +275,21 @@ func TestReassembly(t *testing.T) {
 func TestReassemblyMissingBlock(t *testing.T) {
 	require := require.New(t)
 
-	blocks := []*block.Block{
-		&block.Block{
-			BlockID: 2,
-			Block:   []byte{7, 8, 9},
+	staticKey := [32]byte{}
+	blocks := []*storage.IngressBlock{
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 2,
+				Block:   []byte{7, 8, 9},
+			},
 		},
-		&block.Block{
-			BlockID: 0,
-			Block:   []byte{1, 2, 3},
+		&storage.IngressBlock{
+			S: staticKey,
+			Block: &block.Block{
+				BlockID: 0,
+				Block:   []byte{1, 2, 3},
+			},
 		},
 	}
 	_, err := reassembleMessage(blocks)

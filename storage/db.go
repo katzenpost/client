@@ -178,7 +178,7 @@ func (s *EgressBlock) ToBytes() ([]byte, error) {
 
 // FromBytes returns a *EgressBlock or error
 // given a byte slice of json data
-func FromBytes(raw []byte) (*EgressBlock, error) {
+func EgressBlockFromBytes(raw []byte) (*EgressBlock, error) {
 	j := jsonEgressBlock{}
 	err := json.Unmarshal(raw, &j)
 	if err != nil {
@@ -186,6 +186,40 @@ func FromBytes(raw []byte) (*EgressBlock, error) {
 	}
 	s, err := j.ToEgressBlock()
 	return s, err
+}
+
+// IngressBlock is used to store incoming message blocks retrieved
+// from the client's Provider
+type IngressBlock struct {
+	// S is the `s` value from the noise_x encryption operation
+	S [32]byte
+	// Block is a serialized block.Block
+	Block *block.Block
+}
+
+// ToBytes serializes an IngressBlock into a byte slice
+func (i *IngressBlock) ToBytes() ([]byte, error) {
+	b, err := i.Block.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	b = append(i.S[:], b...)
+	return b, nil
+}
+
+// IngressBlockFromBytes deserializes a slice of bytes to an IngressBlock
+func IngressBlockFromBytes(b []byte) (*IngressBlock, error) {
+	aBlock, err := block.FromBytes(b[32:])
+	if err != nil {
+		return nil, err
+	}
+	s := [32]byte{}
+	copy(s[:], b[0:31])
+	ingressBlock := IngressBlock{
+		S:     s,
+		Block: aBlock,
+	}
+	return &ingressBlock, nil
 }
 
 // Store is our persistent storage for incoming
@@ -348,8 +382,8 @@ func (s *Store) CreateAccountBuckets(accounts []string) error {
 	return nil
 }
 
-// Put puts a message Block, into the corresponding bucket for that account
-func (s *Store) PutIngressBlock(accountName string, b *block.Block) error {
+// Put puts an IngressBlock, into the corresponding bucket for that account
+func (s *Store) PutIngressBlock(accountName string, b *IngressBlock) error {
 	transaction := func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(ingressBucketNameFromAccount(accountName))
 		if bucket == nil {
@@ -359,21 +393,23 @@ func (s *Store) PutIngressBlock(accountName string, b *block.Block) error {
 		if err != nil {
 			return err
 		}
-		blockBytes, err := b.ToBytes()
+		ingressBlockBytes, err := b.ToBytes()
 		if err != nil {
 			return err
 		}
-		err = bucket.Put([]byte(strconv.Itoa(int(seq))), blockBytes)
+		err = bucket.Put([]byte(strconv.Itoa(int(seq))), ingressBlockBytes)
 		return err
 	}
 	err := s.db.Update(transaction)
 	return err
 }
 
-// GetIngressBlocks returns a slice of blocks which contain
+// GetIngressBlocks returns a slice of IngressBlocks which contain
 // the given message ID for the given account name
-func (s *Store) GetIngressBlocks(accountName string, messageID [constants.MessageIDLength]byte) ([]*block.Block, [][]byte, error) {
-	blocks := []*block.Block{}
+// The block "keys" are also returned so that message a message is reassembled
+// the blocks can be removed from the db.
+func (s *Store) GetIngressBlocks(accountName string, messageID [constants.MessageIDLength]byte) ([]*IngressBlock, [][]byte, error) {
+	blocks := []*IngressBlock{}
 	keys := [][]byte{}
 	transaction := func(tx *bolt.Tx) error {
 		b := tx.Bucket(ingressBucketNameFromAccount(accountName))
@@ -384,12 +420,12 @@ func (s *Store) GetIngressBlocks(accountName string, messageID [constants.Messag
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			newVal := make([]byte, len(v))
 			copy(newVal, v)
-			b, err := block.FromBytes(newVal)
+			ingressBlock, err := IngressBlockFromBytes(newVal)
 			if err != nil {
 				return err
 			}
-			if b.MessageID == messageID {
-				blocks = append(blocks, b)
+			if ingressBlock.Block.MessageID == messageID {
+				blocks = append(blocks, ingressBlock)
 				newKey := make([]byte, len(k))
 				copy(newKey, k)
 				keys = append(keys, newKey)

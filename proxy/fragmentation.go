@@ -18,6 +18,7 @@
 package proxy
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"math"
@@ -25,39 +26,65 @@ import (
 
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
-	//"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/client/storage"
 )
 
-func deduplicateBlocks(blocks []*block.Block) []*block.Block {
-	blockMap := make(map[uint16]bool)
-	deduped := []*block.Block{}
-	for _, b := range blocks {
-		_, ok := blockMap[b.BlockID]
+// deduplicateBlocks deduplicates the given blocks according to the BlockIDs
+func deduplicateBlocks(ingressBlocks []*storage.IngressBlock) []*storage.IngressBlock {
+	blockIDMap := make(map[uint16]bool)
+	deduped := []*storage.IngressBlock{}
+	for _, b := range ingressBlocks {
+		_, ok := blockIDMap[b.Block.BlockID]
 		if !ok {
-			blockMap[b.BlockID] = true
+			blockIDMap[b.Block.BlockID] = true
 			deduped = append(deduped, b)
 		}
 	}
 	return deduped
 }
 
+// validBlocks returns true if the given blocks are valid
+// according to "Panoramix Mix Network End-to-end Protocol Specification"
+// section 4.2.1 Client Message Processing:
+//      When reassembling messages, the values of `s`, message_id, and
+//      total_blocks are fixed for any given distinct message. All
+//      differences in those fields across Blocks MUST be interpreted as
+//      the Blocks belonging to different messages.
+func validBlocks(ingressBlocks []*storage.IngressBlock) bool {
+	messageID := ingressBlocks[0].Block.MessageID
+	s := ingressBlocks[0].S
+	totalBlocks := ingressBlocks[0].Block.TotalBlocks
+	for _, b := range ingressBlocks {
+		if !bytes.Equal(messageID[:], b.Block.MessageID[:]) {
+			return false
+		}
+		if !bytes.Equal(s[:], b.S[:]) {
+			return false
+		}
+		if totalBlocks != b.Block.TotalBlocks {
+			return false
+		}
+	}
+	return true
+}
+
 // ByBlockID implements sort.Interface for []*block.Block
-type ByBlockID []*block.Block
+type ByBlockID []*storage.IngressBlock
 
 func (a ByBlockID) Len() int           { return len(a) }
 func (a ByBlockID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByBlockID) Less(i, j int) bool { return a[i].BlockID < a[j].BlockID }
+func (a ByBlockID) Less(i, j int) bool { return a[i].Block.BlockID < a[j].Block.BlockID }
 
 // reassembleMessage reassembles a message returns it or an error
 // if a block is missing
-func reassembleMessage(blocks []*block.Block) ([]byte, error) {
-	sort.Sort(ByBlockID(blocks))
+func reassembleMessage(ingressBlocks []*storage.IngressBlock) ([]byte, error) {
+	sort.Sort(ByBlockID(ingressBlocks))
 	message := []byte{}
-	for i, block := range blocks {
-		if blocks[i].BlockID != uint16(i) {
+	for i, b := range ingressBlocks {
+		if ingressBlocks[i].Block.BlockID != uint16(i) {
 			return nil, errors.New("message reassembler failed: missing message block")
 		}
-		message = append(message, block.Block...)
+		message = append(message, b.Block.Block...)
 	}
 	return message, nil
 }
