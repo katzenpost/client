@@ -64,6 +64,17 @@ func sum(input []float64) (total float64) {
 	return
 }
 
+func getFutureEpoch(hopDuration time.Duration) uint64 {
+	currentEpoch, _, till := epochtime.Now()
+	if hopDuration < till {
+		return currentEpoch
+	}
+	// XXX apply floor or ceiling?
+	//fu := float64(currentEpoch) + (hopDuration-till).Nanoseconds()/epochtime.Period.Nanoseconds()
+
+	return currentEpoch + uint64((hopDuration-till).Nanoseconds())/uint64(epochtime.Period.Nanoseconds())
+}
+
 // RouteFactory builds routes and by doing so handles all the
 // details of path selection and mix PKI interaction. This factory
 // is used to create routes for a mix network which uses the
@@ -99,16 +110,24 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	var err error
 	// number of mix hops plus two provider hops in total
 	descriptors := make([]*pki.MixDescriptor, r.numHops)
-	descriptors[0], err = r.pki.GetProviderDescriptor(senderProviderName)
+	epoch, _, _ := epochtime.Now()
+	consensus, err := r.pki.Get(epoch)
 	if err != nil {
 		return nil, err
 	}
-	descriptors[r.numHops-1], err = r.pki.GetProviderDescriptor(recipientProviderName)
+	descriptors[0], err = consensus.GetProvider(senderProviderName)
+	if err != nil {
+		return nil, err
+	}
+	descriptors[r.numHops-1], err = consensus.GetProvider(recipientProviderName)
 	if err != nil {
 		return nil, err
 	}
 	for i := 1; i < r.numHops-1; i++ {
-		layerMixes := r.pki.GetMixesInLayer(uint8(i))
+		layerMixes, err := consensus.GetMixesInLayer(uint8(i))
+		if err != nil {
+			return nil, err
+		}
 		if len(layerMixes) == 0 {
 			return nil, fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
 		}
@@ -123,7 +142,7 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 
 // getHopEpochKeys is a helper function which ultimately selects
 // appropriate mix routing keys for each hop in the route. This function is
-// given a 'till' argument which specifies the mount of time until the
+// given a 'till' argument which specifies the amount of time until the
 // next Key Rotation Epoch. The 'delays' argument specifies the delay for
 // each hop in the route and the 'descriptors' is a list of MixDescriptor
 // for each hop. For detailed information about the mix key rotation
@@ -131,17 +150,18 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 // of the "Panoramix Mix Network Specification"
 // https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt
 func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, descriptors []*pki.MixDescriptor) ([]*ecdh.PublicKey, error) {
-	hopDelay := delays[0]
+	hopDelay := delays[0] // XXX should prolly be zero
 	keys := make([]*ecdh.PublicKey, r.numHops)
 	for i := 0; i < len(descriptors); i++ {
 		hopDelay = hopDelay + delays[i]
 		hopDuration := durationFromFloat(hopDelay)
+		currentEpoch, _, _ := epochtime.Now()
 		if hopDuration < till {
-			keys[i] = descriptors[i].EpochAPublicKey
+			keys[i] = descriptors[i].MixKeys[currentEpoch]
 		} else if hopDuration > till && hopDuration < till+epochtime.Period {
-			keys[i] = descriptors[i].EpochBPublicKey
+			keys[i] = descriptors[i].MixKeys[currentEpoch+1]
 		} else if hopDuration > till && hopDuration < till+(2*epochtime.Period) {
-			keys[i] = descriptors[i].EpochCPublicKey
+			keys[i] = descriptors[i].MixKeys[currentEpoch+2]
 		} else {
 			return nil, errors.New("error: inappropriate delays")
 		}
@@ -166,9 +186,13 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	if err != nil {
 		return nil, nil, err
 	}
+	currentDelay := float64(0)
 	for i := range path {
+		currentDelay += delays[i]
 		path[i] = new(sphinx.PathHop)
-		copy(path[i].ID[:], descriptors[i].ID[:])
+		hopDuration := durationFromFloat(currentDelay)
+		hopEpoch := getFutureEpoch(hopDuration)
+		copy(path[i].ID[:], descriptors[i].MixKeys[hopEpoch].Bytes())
 		path[i].PublicKey = keys[i]
 		if i < r.numHops-1 {
 			// Non-terminal hop, add the delay.
