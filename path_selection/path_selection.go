@@ -18,6 +18,7 @@
 package path_selection
 
 import (
+	"context"
 	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
@@ -111,7 +112,8 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	// number of mix hops plus two provider hops in total
 	descriptors := make([]*pki.MixDescriptor, r.numHops)
 	epoch, _, _ := epochtime.Now()
-	consensus, err := r.pki.Get(epoch)
+	ctx := context.TODO() // XXX fix me: use correct context for real pki source
+	consensus, err := r.pki.Get(ctx, epoch)
 	if err != nil {
 		return nil, err
 	}

@@ -18,6 +18,7 @@
 package session_pool
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -62,7 +63,8 @@ func New(accounts *config.AccountsMap, config *config.Config, providerAuthentica
 			return nil, err
 		}
 		epoch, _, _ := epochtime.Now()
-		doc, err := mixPKI.Get(epoch)
+		ctx := context.TODO() // XXX
+		doc, err := mixPKI.Get(ctx, epoch)
 		if err != nil {
 			return nil, err
 		}

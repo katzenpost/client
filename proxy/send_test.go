@@ -17,6 +17,7 @@
 package proxy
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"net"
@@ -371,7 +372,8 @@ func TestSender(t *testing.T) {
 
 	//aliceProviderKey := providerMap["acme.com"]
 	epoch, _, _ := epochtime.Now()
-	doc, err := mixPKI.Get(epoch)
+	ctx := context.TODO() // XXX
+	doc, err := mixPKI.Get(ctx, epoch)
 	require.NoError(err, "pki Get failure")
 	descriptor, err := doc.GetProvider("acme.com")
 	require.NoError(err, "pki GetProvider error")

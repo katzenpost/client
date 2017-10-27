@@ -17,6 +17,7 @@
 package proxy
 
 import (
+	"context"
 	"io/ioutil"
 	"net"
 	"net/textproto"
@@ -139,7 +140,8 @@ func TestEndToEndProxy(t *testing.T) {
 	require.True(ok, "failed to get SendPacket command")
 
 	epoch, _, _ := epochtime.Now()
-	doc, err := mixPKI.Get(epoch)
+	ctx := context.TODO() // XXX
+	doc, err := mixPKI.Get(ctx, epoch)
 	require.NoError(err, "pki Get failure")
 
 	descriptor, err := doc.GetProvider("acme.com")
