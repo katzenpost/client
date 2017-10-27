@@ -137,6 +137,7 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecd
 			Port:  11239,
 		},
 	}
+
 	layerMax := uint8(3)
 	keysMap := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
 	staticPKI := mix_pki.NewStaticPKI()
