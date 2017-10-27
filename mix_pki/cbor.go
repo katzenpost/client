@@ -19,10 +19,12 @@ package mix_pki
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io/ioutil"
 
 	"github.com/2tvenom/cbor"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/pki"
 	"github.com/op/go-logging"
 )
@@ -42,7 +44,7 @@ func (t *StaticPKI) Set(epoch uint64, doc *pki.Document) error {
 	return nil
 }
 
-func (t *StaticPKI) Get(epoch uint64) (*pki.Document, error) {
+func (t *StaticPKI) Get(ctx context.Context, epoch uint64) (*pki.Document, error) {
 	val, ok := t.epochMap[epoch]
 	if !ok {
 		return nil, errors.New("static pki key lookup failure")
@@ -71,4 +73,17 @@ func StaticPKIFromFile(mixPKIFile string) (*StaticPKI, error) {
 		return nil, err
 	}
 	return &staticPKI, nil
+}
+
+type CBORStaticPKI struct {
+}
+
+// DocsToCBOR takes a slice of Document structs and
+// returns the CBOR serialized output bytes
+func DocsToCBOR(documents []pki.Document) []byte {
+	return nil // XXX
+}
+
+func CBORKeysFromMap(keysMap map[ecdh.PublicKey]*ecdh.PrivateKey) []byte {
+	return nil // XXX
 }
