@@ -18,9 +18,11 @@
 package mix_pki
 
 import (
+	"bytes"
 	"errors"
+	"io/ioutil"
 
-	//"github.com/2tvenom/cbor"
+	"github.com/2tvenom/cbor"
 	"github.com/katzenpost/core/pki"
 	"github.com/op/go-logging"
 )
@@ -56,3 +58,17 @@ func NewStaticPKI() *StaticPKI {
 }
 
 // XXX TODO: add serialization to cbor in file...
+func StaticPKIFromFile(mixPKIFile string) (*StaticPKI, error) {
+	var buffTest bytes.Buffer
+	encoder := cbor.NewEncoder(&buffTest)
+	staticPKI := StaticPKI{}
+	b, err := ioutil.ReadFile(mixPKIFile)
+	if err != nil {
+		return nil, err
+	}
+	_, err = encoder.Unmarshal(b, &staticPKI)
+	if err != nil {
+		return nil, err
+	}
+	return &staticPKI, nil
+}
