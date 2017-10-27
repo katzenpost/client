@@ -33,8 +33,8 @@ import (
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
-// durationFromFloat returns millisecond time.Duration given a float64
-func durationFromFloat(delay float64) time.Duration {
+// DurationFromFloat returns millisecond time.Duration given a float64
+func DurationFromFloat(delay float64) time.Duration {
 	return time.Duration(delay * float64(time.Millisecond))
 }
 
@@ -154,7 +154,7 @@ func (r *RouteFactory) getHopEpochKeys(till time.Duration, delays []float64, des
 	keys := make([]*ecdh.PublicKey, r.numHops)
 	for i := 0; i < len(descriptors); i++ {
 		hopDelay = hopDelay + delays[i]
-		hopDuration := durationFromFloat(hopDelay)
+		hopDuration := DurationFromFloat(hopDelay)
 		currentEpoch, _, _ := epochtime.Now()
 		if hopDuration < till {
 			keys[i] = descriptors[i].MixKeys[currentEpoch]
@@ -190,7 +190,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	for i := range path {
 		currentDelay += delays[i]
 		path[i] = new(sphinx.PathHop)
-		hopDuration := durationFromFloat(currentDelay)
+		hopDuration := DurationFromFloat(currentDelay)
 		hopEpoch := getFutureEpoch(hopDuration)
 		copy(path[i].ID[:], descriptors[i].MixKeys[hopEpoch].Bytes())
 		path[i].PublicKey = keys[i]
@@ -238,8 +238,8 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.
 		_, _, till = epochtime.Now()
-		forwardDuration := durationFromFloat(sum(forwardDelays))
-		replyDuration := durationFromFloat(sum(replyDelays))
+		forwardDuration := DurationFromFloat(sum(forwardDelays))
+		replyDuration := DurationFromFloat(sum(replyDelays))
 		rtt = forwardDuration + replyDuration
 		if forwardDuration+replyDuration < till+(2*epochtime.Period) {
 			break

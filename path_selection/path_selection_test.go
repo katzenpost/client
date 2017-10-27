@@ -17,37 +17,54 @@
 package path_selection
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/katzenpost/client/mix_pki"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
 
-func newMixDescriptor(isProvider bool, name string, layer int, publicKey *ecdh.PublicKey, ip string, port int) *pki.MixDescriptor {
-	id := [constants.NodeIDLength]byte{}
-	_, err := rand.Reader.Read(id[:])
-	if err != nil {
-		panic(err)
-	}
-	d := pki.MixDescriptor{
-		Name:            name,
-		ID:              id,
-		IsProvider:      isProvider,
-		LoadWeight:      3,
-		TopologyLayer:   uint8(layer),
-		EpochAPublicKey: publicKey,
-		Ipv4Address:     ip,
-		TcpPort:         port,
-	}
-	return &d
+type MixDescriptorSecrets struct {
+	linkPrivKey  *ecdh.PrivateKey
+	epochSecrets map[ecdh.PublicKey]*ecdh.PrivateKey
 }
 
-func newMixPKI(require *require.Assertions) (pki.Client, map[[constants.NodeIDLength]byte]*ecdh.PrivateKey) {
+func createMixDescriptor(name string, layer uint8, addresses []string, startEpoch, endEpoch uint64) (*pki.MixDescriptor, *MixDescriptorSecrets, error) {
+	linkPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	mixKeys := make(map[uint64]*ecdh.PublicKey)
+	epochSecrets := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
+	for i := startEpoch; i < endEpoch+1; i++ {
+		mixPrivKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return nil, nil, err
+		}
+		mixKeys[i] = mixPrivKey.PublicKey()
+		pubKey := mixPrivKey.PublicKey()
+		epochSecrets[*pubKey] = mixPrivKey
+	}
+	secrets := MixDescriptorSecrets{
+		linkPrivKey:  linkPrivKey,
+		epochSecrets: epochSecrets,
+	}
+	descriptor := pki.MixDescriptor{
+		Name:       name,
+		LinkKey:    linkPrivKey.PublicKey(),
+		MixKeys:    mixKeys,
+		Addresses:  addresses,
+		Layer:      layer,
+		LoadWeight: 0,
+	}
+	return &descriptor, &secrets, nil
+}
+
+func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecdh.PrivateKey) {
 	type testDesc struct {
 		Name  string
 		Layer int
@@ -120,23 +137,54 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[[constants.NodeIDLe
 			Port:  11239,
 		},
 	}
-
-	keysMap := make(map[[constants.NodeIDLength]byte]*ecdh.PrivateKey)
+	layerMax := uint8(3)
+	keysMap := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
 	staticPKI := mix_pki.NewStaticPKI()
+	startEpoch, _, _ := epochtime.Now()
+	providers := []*pki.MixDescriptor{}
+	mixes := []*pki.MixDescriptor{}
 	for _, provider := range test_providers {
-		privKey, err := ecdh.NewKeypair(rand.Reader)
-		require.NoError(err, "ecdh NewKeypair error")
-		descriptor := newMixDescriptor(true, provider.Name, provider.Layer, privKey.PublicKey(), provider.IP, provider.Port)
-		keysMap[descriptor.ID] = privKey
-		staticPKI.ProviderMap[descriptor.Name] = descriptor
-		staticPKI.MixMap[descriptor.ID] = descriptor
+		mockAddr := []string{} // XXX fix me?
+		descriptor, descriptorSecrets, err := createMixDescriptor(provider.Name, uint8(provider.Layer), mockAddr, startEpoch, startEpoch+3)
+		require.NoError(err, "createMixDescriptor errored")
+		providers = append(providers, descriptor)
+		for pubKey, privKey := range descriptorSecrets.epochSecrets {
+			keysMap[pubKey] = privKey
+		}
 	}
 	for _, mix := range test_mixes {
-		privKey, err := ecdh.NewKeypair(rand.Reader)
-		require.NoError(err, "ecdh NewKeypair error")
-		descriptor := newMixDescriptor(true, mix.Name, mix.Layer, privKey.PublicKey(), mix.IP, mix.Port)
-		keysMap[descriptor.ID] = privKey
-		staticPKI.MixMap[descriptor.ID] = descriptor
+		mockAddr := []string{} // XXX fix me?
+		descriptor, descriptorSecrets, err := createMixDescriptor(mix.Name, uint8(mix.Layer), mockAddr, startEpoch, startEpoch+3)
+		require.NoError(err, "createMixDescriptor errored")
+		mixes = append(mixes, descriptor)
+		for pubKey, privKey := range descriptorSecrets.epochSecrets {
+			keysMap[pubKey] = privKey
+		}
+	}
+
+	// for each epoch create a PKI Document and index it by epoch
+	for current := startEpoch; current < startEpoch+3+1; current++ {
+		pkiDocument := pki.Document{
+			Epoch: current,
+		}
+		// topology
+		pkiDocument.Topology = make([][]*pki.MixDescriptor, layerMax+1)
+		for i := uint8(0); i < layerMax; i++ {
+			pkiDocument.Topology[i] = make([]*pki.MixDescriptor, 0)
+		}
+		for i := uint8(0); i < layerMax+1; i++ {
+			for _, mix := range mixes {
+				if mix.Layer == i {
+					pkiDocument.Topology[i] = append(pkiDocument.Topology[i], mix)
+				}
+			}
+		}
+		// providers
+		for _, provider := range providers {
+			pkiDocument.Providers = append(pkiDocument.Providers, provider)
+		}
+		// setup our epoch -> document map
+		staticPKI.Set(current, &pkiDocument)
 	}
 	return staticPKI, keysMap
 }
@@ -181,57 +229,4 @@ func TestGetRouteDescriptors(t *testing.T) {
 		require.NotNil(descriptor, "is nil; fail")
 		t.Logf("name: %s", descriptor.Name)
 	}
-}
-
-type MockErrorPKI struct {
-	errProvider    bool
-	errGetMixes    bool
-	providerErrNum int
-}
-
-func (m *MockErrorPKI) GetLatestConsensusMap() *map[[constants.NodeIDLength]byte]*pki.MixDescriptor {
-	return nil
-}
-
-func (m *MockErrorPKI) GetProviderDescriptor(name string) (*pki.MixDescriptor, error) {
-	if m.errProvider {
-		m.providerErrNum = m.providerErrNum - 1
-		if m.providerErrNum > 0 {
-			return nil, errors.New("GetProviderDescriptor failure")
-		} else {
-			privKey, _ := ecdh.NewKeypair(rand.Reader)
-			descriptor := newMixDescriptor(true, "acme.com", 0, privKey.PublicKey(), "127.0.0.1", 666)
-			return descriptor, nil
-		}
-	}
-	return nil, nil
-}
-
-func (m *MockErrorPKI) GetMixesInLayer(layer uint8) []*pki.MixDescriptor {
-	if m.errGetMixes {
-		return []*pki.MixDescriptor{}
-	}
-	return []*pki.MixDescriptor{&pki.MixDescriptor{}}
-}
-
-func (m *MockErrorPKI) GetDescriptor(id [constants.NodeIDLength]byte) (*pki.MixDescriptor, error) {
-	return nil, nil
-}
-
-func TestGetRouteDescriptorsErrors(t *testing.T) {
-	require := require.New(t)
-
-	pki := MockErrorPKI{
-		errProvider:    true,
-		providerErrNum: 5,
-	}
-	nrHops := 5
-	lambda := float64(.00123)
-	factory := New(&pki, nrHops, lambda)
-
-	senderProvider := "acme.com"
-	recipientProvider := "nsa.gov"
-	recipientID := [constants.RecipientIDLength]byte{}
-	_, _, _, _, err := factory.Build(senderProvider, recipientProvider, recipientID)
-	require.Error(err, "Build should have errored")
 }
