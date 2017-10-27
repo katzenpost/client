@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
@@ -60,12 +61,19 @@ func New(accounts *config.AccountsMap, config *config.Config, providerAuthentica
 		if err != nil {
 			return nil, err
 		}
-		providerDesc, err := mixPKI.GetProviderDescriptor(acct.Provider)
+		epoch, _, _ := epochtime.Now()
+		doc, err := mixPKI.Get(epoch)
+		if err != nil {
+			return nil, err
+		}
+		providerDesc, err := doc.GetProvider(acct.Provider)
 		if err != nil {
 			return nil, err
 		}
 		// XXX hard code "tcp" here?
-		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", providerDesc.Ipv4Address, providerDesc.TcpPort))
+		network := providerDesc.Addresses[0]
+		address := providerDesc.Addresses[1]
+		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", network, address))
 		if err != nil {
 			return nil, err
 		}
