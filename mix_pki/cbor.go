@@ -59,31 +59,69 @@ func NewStaticPKI() *StaticPKI {
 	return &staticPKI
 }
 
-// XXX TODO: add serialization to cbor in file...
-func StaticPKIFromFile(mixPKIFile string) (*StaticPKI, error) {
-	var buffTest bytes.Buffer
-	encoder := cbor.NewEncoder(&buffTest)
-	staticPKI := StaticPKI{}
-	b, err := ioutil.ReadFile(mixPKIFile)
-	if err != nil {
-		return nil, err
-	}
-	_, err = encoder.Unmarshal(b, &staticPKI)
-	if err != nil {
-		return nil, err
-	}
-	return &staticPKI, nil
+type CBORStaticPKI struct {
+	EpochMap map[uint64]*pki.CBORDocument
 }
 
-type CBORStaticPKI struct {
+func StaticPKIFromFile(pkiFile string) (*StaticPKI, error) {
+	epochMap := make(map[uint64]*pki.Document)
+	cborEpochMap := make(map[uint64]*pki.CBORDocument)
+	var buffTest bytes.Buffer
+	encoder := cbor.NewEncoder(&buffTest)
+	b, err := ioutil.ReadFile(pkiFile)
+	if err != nil {
+		return nil, err
+	}
+	_, err = encoder.Unmarshal(b, &cborEpochMap)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range cborEpochMap {
+		epochMap[k] = v.ToDocument()
+	}
+	p := StaticPKI{
+		epochMap: epochMap,
+	}
+	return &p, nil
 }
 
 // DocsToCBOR takes a slice of Document structs and
 // returns the CBOR serialized output bytes
-func DocsToCBOR(documents []pki.Document) []byte {
-	return nil // XXX
+func DocsToCBOR(documents []pki.Document) ([]byte, error) {
+	newDocs := []pki.CBORDocument{}
+	for _, doc := range documents {
+		cborDoc := doc.ToCBORDocument()
+		newDocs = append(newDocs, *cborDoc)
+	}
+	var buffTest bytes.Buffer
+	encoder := cbor.NewEncoder(&buffTest)
+	ok, err := encoder.Marshal(newDocs)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("wtf")
+	}
+	return buffTest.Bytes(), nil
 }
 
-func CBORKeysFromMap(keysMap map[ecdh.PublicKey]*ecdh.PrivateKey) []byte {
-	return nil // XXX
+func CBORKeysFromMap(keysMap map[ecdh.PublicKey]*ecdh.PrivateKey) ([]byte, error) {
+	newMap := make(map[[32]byte][32]byte)
+	for k, v := range keysMap {
+		key := [32]byte{}
+		copy(key[:], k.Bytes())
+		val := [32]byte{}
+		copy(val[:], v.Bytes())
+		newMap[key] = val
+	}
+	var buffTest bytes.Buffer
+	encoder := cbor.NewEncoder(&buffTest)
+	ok, err := encoder.Marshal(newMap)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("wtf")
+	}
+	return buffTest.Bytes(), nil
 }
