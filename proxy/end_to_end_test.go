@@ -17,6 +17,7 @@
 package proxy
 
 import (
+	"context"
 	"io/ioutil"
 	"net"
 	"net/textproto"
@@ -28,6 +29,7 @@ import (
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +54,7 @@ func TestEndToEndProxy(t *testing.T) {
 		},
 	}
 
-	mixPKI, providerMap, mixMap := newMixPKI(require)
+	mixPKI, keysMap := newMixPKI(require)
 
 	nrHops := 5
 	lambda := float64(.123)
@@ -136,10 +138,23 @@ func TestEndToEndProxy(t *testing.T) {
 	require.True(ok, "failed to get MockSession")
 	sendPacket, ok := mockAliceSession.sentCommands[0].(*commands.SendPacket)
 	require.True(ok, "failed to get SendPacket command")
-	aliceProviderKey := providerMap["acme.com"]
-	bobProviderKey := providerMap["nsa.gov"]
+
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO() // XXX
+	doc, err := mixPKI.Get(ctx, epoch)
+	require.NoError(err, "pki Get failure")
+
+	descriptor, err := doc.GetProvider("acme.com")
+	require.NoError(err, "pki GetProvider error")
+	aliceProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+
+	descriptor, err = doc.GetProvider("nsa.gov")
+	require.NoError(err, "pki GetProvider error")
+	bobProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
-	bobsCiphertext := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, mixMap, nrHops)
+	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
+	require.NoError(err, "decrypt sphinx layers failure")
 	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
 	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[556:])
 	require.NoError(err, "handler decrypt failure")
