@@ -24,15 +24,16 @@ import (
 	"io"
 
 	"github.com/katzenpost/client/constants"
-	coreConstants "github.com/katzenpost/core/constants"
+	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/noise"
 )
 
 const (
 	// BlockLength is the maximum payload size of a Block in bytes.
-	BlockLength         = coreConstants.ForwardPayloadLength - (blockCipherOverhead + blockOverhead)
+	BlockLength         = coreconstants.ForwardPayloadLength - (blockCipherOverhead + blockOverhead) - (coreconstants.SphinxPlaintextHeaderLength + sphinx.SURBLength)
 	blockCipherOverhead = keyLen + macLen + keyLen + macLen // -> e, es, s, ss
 	blockOverhead       = 24
 

@@ -17,6 +17,7 @@
 package proxy
 
 import (
+	"encoding/binary"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
+	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
@@ -66,6 +68,12 @@ func NewSender(identity string, pool *session_pool.SessionPool, store *storage.S
 // composeSphinxPacket creates a SendPacket wire protocol command with
 // a Sphinx packet and SURB header
 func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock, payload []byte) (*commands.SendPacket, time.Duration, error) {
+	const (
+		hdrLength    = coreconstants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+		flagsPadding = 0
+		flagsSURB    = 1
+		reserved     = 0
+	)
 	forwardPath, replyPath, surbID, rtt, err := s.routeFactory.Build(storageBlock.SenderProvider, storageBlock.RecipientProvider, storageBlock.RecipientID)
 	if err != nil {
 		return nil, rtt, err
@@ -81,7 +89,17 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 	if err != nil {
 		return nil, rtt, err
 	}
-	sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, append(surb, payload...))
+
+	// create a valid BlockSphinxPlaintext as specified in the
+	// Panoramix Mix Network End-to-end Protocol Specification
+	sphinxPlaintextBlock := [coreconstants.ForwardPayloadLength]byte{}
+	sphinxPlaintextBlock[0] = flagsSURB
+	sphinxPlaintextBlock[1] = reserved
+	binary.BigEndian.PutUint16(sphinxPlaintextBlock[coreconstants.SphinxPlaintextHeaderLength:], uint16(len(surb)))
+	copy(sphinxPlaintextBlock[coreconstants.SphinxPlaintextHeaderLength:], surb)
+	copy(sphinxPlaintextBlock[hdrLength:], payload)
+
+	sphinxPacket, err := sphinx.NewPacket(rand.Reader, forwardPath, sphinxPlaintextBlock[:])
 	if err != nil {
 		return nil, rtt, err
 	}

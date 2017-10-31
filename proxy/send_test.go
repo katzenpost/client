@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
+	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -319,6 +320,13 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 func TestSender(t *testing.T) {
 	require := require.New(t)
 
+	const (
+		hdrLength    = coreconstants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+		flagsPadding = 0
+		flagsSURB    = 1
+		reserved     = 0
+	)
+
 	mixPKI, keysMap := newMixPKI(require)
 	nrHops := 5
 	lambda := float64(.123)
@@ -388,7 +396,7 @@ func TestSender(t *testing.T) {
 	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
 	require.NoError(err, "handler decrypt sphinx layers failure")
 	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
-	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[556:])
+	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[hdrLength:])
 	require.NoError(err, "handler decrypt failure")
 	t.Logf("block: %s", string(b.Block))
 

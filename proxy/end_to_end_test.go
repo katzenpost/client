@@ -23,19 +23,27 @@ import (
 	"net/textproto"
 	"sync"
 	"testing"
-	//"time"
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/path_selection"
+	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/require"
 )
 
 func TestEndToEndProxy(t *testing.T) {
 	require := require.New(t)
+
+	const (
+		hdrLength    = coreconstants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+		flagsPadding = 0
+		flagsSURB    = 1
+		reserved     = 0
+	)
 
 	aliceEmail := "alice@acme.com"
 	alicePool, aliceStore, alicePrivKey, aliceBlockHandler := makeUser(require, aliceEmail)
@@ -155,12 +163,12 @@ func TestEndToEndProxy(t *testing.T) {
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
 	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
 	require.NoError(err, "decrypt sphinx layers failure")
-	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
-	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[556:])
+	require.Equal(len(bobsCiphertext), coreconstants.ForwardPayloadLength, "ciphertext len mismatch")
+	blockCiphertext := bobsCiphertext[hdrLength:]
+	b, _, err := bobBlockHandler.Decrypt(blockCiphertext)
 	require.NoError(err, "handler decrypt failure")
 	t.Logf("block: %s", string(b.Block))
 
-	// XXX fetch message
 	bobStore.CreateAccountBuckets([]string{bobEmail})
 	bobFetcher := Fetcher{
 		Identity: bobEmail,
@@ -175,7 +183,7 @@ func TestEndToEndProxy(t *testing.T) {
 	msgCmd := commands.Message{
 		QueueSizeHint: 0,
 		Sequence:      0,
-		Payload:       bobsCiphertext[556:],
+		Payload:       bobsCiphertext[hdrLength:],
 	}
 	mockBobSession.recvCommands = append(mockBobSession.recvCommands, msgCmd)
 
@@ -183,11 +191,6 @@ func TestEndToEndProxy(t *testing.T) {
 	require.NoError(err, "Fetch failure")
 
 	t.Logf("queueHintSize %d", queueHintSize)
-	//fetchers := make(map[string]*Fetcher)
-	//fetchers[bobEmail] = bobFetcher
-	//duration := time.Second * 7 // XXX
-	//periodicRetriever := NewFetchScheduler(fetchers, duration)
-	//periodicRetriever.Start()
 
 	pop3Service := NewPop3Service(bobStore)
 	bobPop3ServerConn, bobPop3ClientConn := net.Pipe()
