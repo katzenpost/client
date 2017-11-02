@@ -23,11 +23,16 @@ import (
 
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBlock(t *testing.T) {
 	require := require.New(t)
+
+	const (
+		hdrLength = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+	)
 
 	idKeyAlice, err := ecdh.NewKeypair(rand.Reader)
 	require.NoError(err, "Block: Alice NewKeypair()")
@@ -53,7 +58,7 @@ func TestBlock(t *testing.T) {
 		blkA.Block = payload[:sz]
 		ct, err := hAlice.Encrypt(idKeyBob.PublicKey(), blkA)
 		require.NoError(err, "Block encrypt failure")
-		require.Len(ct, constants.ForwardPayloadLength)
+		require.Equal(len(ct), constants.ForwardPayloadLength-hdrLength)
 
 		// Decrypt.
 		blk, peerPk, err := hBob.Decrypt(ct)
