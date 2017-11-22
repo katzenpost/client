@@ -28,6 +28,16 @@ func TestConfig(t *testing.T) {
 	require := require.New(t)
 
 	tomlConfigStr := `
+DataDir = "blah"
+
+[PKI]
+[PKI.Nonvoting]
+Address = "127.0.0.1:6999"
+PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+
+[Logging]
+Level = "DEBUG"
+
 [[Account]]
   Name = "Alice"
   Provider = "Acme"
@@ -44,6 +54,10 @@ func TestConfig(t *testing.T) {
   PublicKeyFile = "/blah/blah/certs/acme.pem"
   Name = "Acme"
 
+[POP3Proxy]
+  Address = "127.0.0.1:9006"
+  Network = "tcp"
+
 [SMTPProxy]
   Address = "127.0.0.1:2525"
   Network = "tcp"
@@ -52,7 +66,11 @@ func TestConfig(t *testing.T) {
 	require.NoError(err, "TempFile failed")
 	_, err = tmpConfigFile.Write([]byte(tomlConfigStr))
 	require.NoError(err, "Write failed")
-	config, err := FromFile(tmpConfigFile.Name())
+	config, err := LoadFile(tmpConfigFile.Name())
 	require.NoError(err, "FromFile failed")
-	t.Log(config)
+	t.Logf("DataDir %s", config.DataDir)
+	t.Logf("PKI address %s", config.PKI.Nonvoting.Address)
+	t.Logf("1st account name %s", config.Account[0].Name)
+	t.Logf("POP3Proxy address %s", config.POP3Proxy.Address)
+	t.Logf("ProviderPinning Name %s", config.ProviderPinning[0].Name)
 }
