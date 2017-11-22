@@ -46,13 +46,23 @@ func DurationFromFloat(delay float64) time.Duration {
 // of the "Panoramix Mix Network End-to-end Protocol Specification"
 // the delay for the egress provider, the last hop is always zero,
 // see https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
-func getDelays(lambda float64, count int) []float64 {
+func getDelays(lambda float64, maxHopDelay uint64, count int) ([]float64, error) {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
 	for i := 0; i < count-1; i++ {
-		delays[i] = rand.Exp(cryptRand, lambda)
+		var delay float64
+		for j := 0; j < 3; j++ {
+			delay = rand.Exp(cryptRand, lambda)
+			if delay < float64(maxHopDelay) {
+				break
+			}
+		}
+		if delay == 0 {
+			return nil, errors.New("path selection failure: delays must be lower than max hop delay")
+		}
+		delays[i] = delay
 	}
-	return delays
+	return delays, nil
 }
 
 // sum adds a slice of float64.
@@ -70,9 +80,6 @@ func getFutureEpoch(hopDuration time.Duration) uint64 {
 	if hopDuration < till {
 		return currentEpoch
 	}
-	// XXX apply floor or ceiling?
-	//fu := float64(currentEpoch) + (hopDuration-till).Nanoseconds()/epochtime.Period.Nanoseconds()
-
 	return currentEpoch + uint64((hopDuration-till).Nanoseconds())/uint64(epochtime.Period.Nanoseconds())
 }
 
@@ -83,9 +90,10 @@ func getFutureEpoch(hopDuration time.Duration) uint64 {
 // hop in the route where the mean of this distribution is tuneable
 // using the lambda parameter.
 type RouteFactory struct {
-	pki     pki.Client
-	numHops int
-	lambda  float64
+	pki         pki.Client
+	numHops     int
+	lambda      float64
+	maxHopDelay uint64
 }
 
 // New creates a new RouteFactory for creating routes
@@ -95,11 +103,12 @@ type RouteFactory struct {
 //   ingress and egress mixnet Providers.
 // * lambda - parameter to manipulate the exponential distribution
 //   that our per hop Poisson mix delays are sampled from.
-func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
+func New(pki pki.Client, numHops int, lambda float64, maxHopDelay uint64) *RouteFactory {
 	r := RouteFactory{
-		pki:     pki,
-		numHops: numHops,
-		lambda:  lambda,
+		pki:         pki,
+		numHops:     numHops,
+		lambda:      lambda,
+		maxHopDelay: maxHopDelay,
 	}
 	return &r
 }
@@ -230,12 +239,19 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
 func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
+	var err error
 	var rtt, till time.Duration
 	var forwardDelays, replyDelays []float64
 	for {
 		// 1. Sample all forward and SURB delays.
-		forwardDelays = getDelays(r.lambda, r.numHops)
-		replyDelays = getDelays(r.lambda, r.numHops)
+		forwardDelays, err = getDelays(r.lambda, r.maxHopDelay, r.numHops)
+		if err != nil {
+			return nil, nil, nil, rtt, err
+		}
+		replyDelays, err = getDelays(r.lambda, r.maxHopDelay, r.numHops)
+		if err != nil {
+			return nil, nil, nil, rtt, err
+		}
 		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.

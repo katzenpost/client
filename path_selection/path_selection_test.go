@@ -195,7 +195,8 @@ func TestPathSelection(t *testing.T) {
 	mixPKI, _ := newMixPKI(require)
 	nrHops := 5
 	lambda := float64(.00123)
-	factory := New(mixPKI, nrHops, lambda)
+	maxHopDelay := uint64(666)
+	factory := New(mixPKI, nrHops, lambda, maxHopDelay)
 
 	senderProvider := "acme.com"
 	recipientProvider := "nsa.gov"
@@ -217,7 +218,8 @@ func TestGetRouteDescriptors(t *testing.T) {
 	mixPKI, _ := newMixPKI(require)
 	nrHops := 5
 	lambda := float64(.00123)
-	factory := New(mixPKI, nrHops, lambda)
+	maxHopDelay := uint64(666)
+	factory := New(mixPKI, nrHops, lambda, maxHopDelay)
 
 	descriptors, err := factory.getRouteDescriptors("nsa.gov", "acme.com")
 	require.NoError(err, "getRouteDescriptor failure")

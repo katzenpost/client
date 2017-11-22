@@ -18,6 +18,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 
 	nClient "github.com/katzenpost/authority/nonvoting/client"
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -46,6 +48,8 @@ type Client struct {
 	mixPKI  pki.Client
 
 	pinnedProviders map[[255]byte]*ecdh.PublicKey
+
+	routeFactory *path_selection.RouteFactory
 }
 
 func (c *Client) initDataDir() error {
@@ -131,6 +135,14 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if err != nil {
 		return nil, err
 	}
+
+	ctx := context.TODO()
+	epoch, _, _ := epochtime.Now()
+	doc, err := c.mixPKI.Get(ctx, epoch)
+	if err != nil {
+		return nil, err
+	}
+	c.routeFactory = path_selection.New(mixPKI, constants.HopsPerPath, doc.Lambda, doc.MaxDelay)
 
 	return c, nil
 }
