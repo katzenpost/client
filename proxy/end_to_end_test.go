@@ -66,7 +66,8 @@ func TestEndToEndProxy(t *testing.T) {
 
 	nrHops := 5
 	lambda := float64(.123)
-	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
+	maxDelay := uint64(666)
+	routeFactory := path_selection.New(mixPKI, nrHops, lambda, maxDelay)
 
 	aliceSender, err := NewSender(aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
 	require.NoError(err, "NewSender failure")

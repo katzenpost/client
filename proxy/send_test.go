@@ -330,7 +330,8 @@ func TestSender(t *testing.T) {
 	mixPKI, keysMap := newMixPKI(require)
 	nrHops := 5
 	lambda := float64(.123)
-	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
+	maxDelay := uint64(666)
+	routeFactory := path_selection.New(mixPKI, nrHops, lambda, maxDelay)
 
 	aliceEmail := "alice@acme.com"
 	alicePool, aliceStore, alicePrivKey, aliceBlockHandler := makeUser(require, aliceEmail)
