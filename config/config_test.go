@@ -50,10 +50,6 @@ Level = "DEBUG"
   Name = "Eve"
   Provider = "Trustworthy"
 
-[[ProviderPinning]]
-  PublicKeyFile = "/blah/blah/certs/acme.pem"
-  Name = "Acme"
-
 [POP3Proxy]
   Address = "127.0.0.1:9006"
   Network = "tcp"
@@ -72,5 +68,4 @@ Level = "DEBUG"
 	t.Logf("PKI address %s", config.PKI.Nonvoting.Address)
 	t.Logf("1st account name %s", config.Account[0].Name)
 	t.Logf("POP3Proxy address %s", config.POP3Proxy.Address)
-	t.Logf("ProviderPinning Name %s", config.ProviderPinning[0].Name)
 }

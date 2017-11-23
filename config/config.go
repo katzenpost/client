@@ -55,15 +55,6 @@ type Account struct {
 	Provider string
 }
 
-// ProviderPinning is used to deserialize the
-// provider pinning sections of the configuration file
-type ProviderPinning struct {
-	// PublicKey is the hex or base64 encoded public key
-	PublicKey string
-	// Name is the name of the Provider
-	Name string
-}
-
 // Proxy is used to deserialize the proxy
 // configuration sections of the configuration
 // for the SMTP and POP3 proxies.
@@ -151,8 +142,6 @@ type Config struct {
 	Account []Account
 	// PKI configures the PKI
 	PKI *PKI
-	// ProviderPinning is an optional list of pinned Provider public keys
-	ProviderPinning []ProviderPinning
 	// SMTPProxy is the transport configuration of the SMTP submission proxy
 	SMTPProxy *Proxy
 	// POP3Proxy is the transport configuration of the POP3 receive proxy
@@ -331,22 +320,6 @@ func (cfg *Config) FixupAndValidate() error {
 		return err
 	}
 	return nil
-}
-
-// GetProviderPins returns a mapping of
-// identity string to public key
-func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) {
-	pinnings := c.ProviderPinning
-	keysMap := make(map[[255]byte]*ecdh.PublicKey)
-	for i := 0; i < len(pinnings); i++ {
-		name := pinnings[i].Name
-		providerKey := new(ecdh.PublicKey)
-		providerKey.FromString(pinnings[i].PublicKey)
-		nameField := [255]byte{}
-		copy(nameField[:], name)
-		keysMap[nameField] = providerKey
-	}
-	return keysMap, nil
 }
 
 // Load parses and validates the provided buffer b as a config file body and

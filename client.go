@@ -35,7 +35,6 @@ import (
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
-	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -57,7 +56,6 @@ type Client struct {
 	mixPKI  pki.Client
 
 	accountsMap         *config.AccountsMap
-	pinnedProviders     map[[255]byte]*ecdh.PublicKey
 	peerAuthenticator   wire.PeerAuthenticator
 	providerSessionPool *session_pool.SessionPool
 
@@ -158,12 +156,7 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 		return nil, err
 	}
 
-	c.pinnedProviders, err = cfg.GetProviderPinnedKeys()
-	if err != nil {
-		return nil, err
-	}
-	c.peerAuthenticator = auth.ProviderAuthenticator(c.pinnedProviders)
-
+	c.peerAuthenticator = auth.New(c.mixPKI)
 	c.providerSessionPool, err = session_pool.New(c.accountsMap, c.cfg, c.peerAuthenticator, c.mixPKI)
 	if err != nil {
 		return nil, err

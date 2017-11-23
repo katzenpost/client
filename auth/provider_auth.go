@@ -18,9 +18,11 @@
 package auth
 
 import (
+	"context"
 	"crypto/subtle"
 
-	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
 )
 
@@ -28,19 +30,37 @@ import (
 // which is used to authenticate remote peers (in this case a provider)
 // based on the authenticated key exchange
 // as specified in core/wire/session.go
-type ProviderAuthenticator map[[255]byte]*ecdh.PublicKey
+type ProviderAuthenticator struct {
+	mixPKI pki.Client
+}
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a ProviderAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
-	nameField := [255]byte{}
-	copy(nameField[:], peer.AdditionalData)
-	_, ok := a[nameField]
-	if !ok {
+	ctx := context.TODO() // XXX set a deadline
+	epoch, _, _ := epochtime.Now()
+	doc, err := a.mixPKI.Get(ctx, epoch)
+	if err != nil {
+		// XXX log the error
 		return false
 	}
-	if subtle.ConstantTimeCompare(a[nameField].Bytes(), peer.PublicKey.Bytes()) != 1 {
-		return false
+	providerName := string(peer.AdditionalData)
+	for _, provider := range doc.Providers {
+		if providerName == provider.Name {
+			if subtle.ConstantTimeCompare(provider.LinkKey.Bytes(), peer.PublicKey.Bytes()) == 1 {
+				return true
+			} else {
+				return false
+			}
+		}
 	}
-	return true
+	return false
+}
+
+// New returns a new ProviderAuthenticator
+func New(mixPKI pki.Client) *ProviderAuthenticator {
+	a := ProviderAuthenticator{
+		mixPKI: mixPKI,
+	}
+	return &a
 }
