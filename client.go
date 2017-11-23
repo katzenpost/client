@@ -112,6 +112,14 @@ func (c *Client) initLogging() error {
 	return err
 }
 
+// Shutdown cleanly shuts down a given Client instance.
+func (c *Client) Shutdown() {
+	c.smtpServer.Stop()
+	c.pop3Server.Stop()
+	c.sendScheduler.Shutdown()
+	c.periodicRetriever.Shutdown()
+}
+
 // New returns a new Client instance parameterized with the specified
 // configuration.
 func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.UserPKI) (*Client, error) {

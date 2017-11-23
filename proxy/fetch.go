@@ -189,6 +189,11 @@ func (s *FetchScheduler) Start() {
 	}
 }
 
+// Shutdown shuts down the scheduler
+func (s *FetchScheduler) Shutdown() {
+	s.sched.Shutdown()
+}
+
 // handleFetch is called by the our scheduler when
 // a fetch must be performed. After the fetch, we
 // either schedule an immediate another fetch or a

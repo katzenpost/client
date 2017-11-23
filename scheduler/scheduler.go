@@ -75,3 +75,10 @@ func (s *PriorityScheduler) Add(duration time.Duration, task interface{}) {
 	s.queue.Enqueue(uint64(priority), task)
 	s.schedule()
 }
+
+// Shutdown shuts down the scheduler
+func (s *PriorityScheduler) Shutdown() {
+	if !s.timer.Stop() {
+		<-s.timer.C
+	}
+}

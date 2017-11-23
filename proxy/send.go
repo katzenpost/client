@@ -201,3 +201,8 @@ func (s *SendScheduler) handleSend(task interface{}) {
 		s.add(rtt, storageBlock)
 	}
 }
+
+// Shutdown shuts down the send scheduler
+func (s *SendScheduler) Shutdown() {
+	s.sched.Shutdown()
+}
