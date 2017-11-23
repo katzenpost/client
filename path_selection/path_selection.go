@@ -46,23 +46,17 @@ func DurationFromFloat(delay float64) time.Duration {
 // of the "Panoramix Mix Network End-to-end Protocol Specification"
 // the delay for the egress provider, the last hop is always zero,
 // see https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
-func getDelays(lambda float64, maxHopDelay uint64, count int) ([]float64, error) {
+func getDelays(lambda float64, maxHopDelay uint64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
 	for i := 0; i < count-1; i++ {
-		var delay float64
-		for j := 0; j < 3; j++ {
-			delay = rand.Exp(cryptRand, lambda)
-			if delay < float64(maxHopDelay) {
-				break
-			}
-		}
-		if delay == 0 {
-			return nil, errors.New("path selection failure: delays must be lower than max hop delay")
+		delay := rand.Exp(cryptRand, lambda)
+		if delay > float64(maxHopDelay) {
+			delay = float64(maxHopDelay)
 		}
 		delays[i] = delay
 	}
-	return delays, nil
+	return delays
 }
 
 // sum adds a slice of float64.
@@ -244,14 +238,8 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 	var forwardDelays, replyDelays []float64
 	for {
 		// 1. Sample all forward and SURB delays.
-		forwardDelays, err = getDelays(r.lambda, r.maxHopDelay, r.numHops)
-		if err != nil {
-			return nil, nil, nil, rtt, err
-		}
-		replyDelays, err = getDelays(r.lambda, r.maxHopDelay, r.numHops)
-		if err != nil {
-			return nil, nil, nil, rtt, err
-		}
+		forwardDelays = getDelays(r.lambda, r.maxHopDelay, r.numHops)
+		replyDelays = getDelays(r.lambda, r.maxHopDelay, r.numHops)
 		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.
