@@ -23,15 +23,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	nClient "github.com/katzenpost/authority/nonvoting/client"
+	"github.com/katzenpost/client/auth"
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
+	"github.com/katzenpost/client/proxy"
+	"github.com/katzenpost/client/session_pool"
+	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/wire"
+	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
 )
 
@@ -42,14 +53,22 @@ type Client struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	accountsMap *config.AccountsMap
-
 	userPKI user_pki.UserPKI
 	mixPKI  pki.Client
 
-	pinnedProviders map[[255]byte]*ecdh.PublicKey
+	accountsMap         *config.AccountsMap
+	pinnedProviders     map[[255]byte]*ecdh.PublicKey
+	peerAuthenticator   wire.PeerAuthenticator
+	providerSessionPool *session_pool.SessionPool
 
-	routeFactory *path_selection.RouteFactory
+	routeFactory      *path_selection.RouteFactory
+	store             *storage.Store
+	sendScheduler     *proxy.SendScheduler
+	periodicRetriever *proxy.FetchScheduler
+	smtpProxy         *proxy.SubmitProxy
+	pop3Service       *proxy.Pop3Service
+	smtpServer        *server.Server
+	pop3Server        *server.Server
 }
 
 func (c *Client) initDataDir() error {
@@ -135,6 +154,12 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if err != nil {
 		return nil, err
 	}
+	c.peerAuthenticator = auth.ProviderAuthenticator(c.pinnedProviders)
+
+	c.providerSessionPool, err = session_pool.New(c.accountsMap, c.cfg, c.peerAuthenticator, c.mixPKI)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx := context.TODO()
 	epoch, _, _ := epochtime.Now()
@@ -142,7 +167,58 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if err != nil {
 		return nil, err
 	}
-	c.routeFactory = path_selection.New(mixPKI, constants.HopsPerPath, doc.Lambda, doc.MaxDelay)
+	c.routeFactory = path_selection.New(c.mixPKI, constants.HopsPerPath, doc.Lambda, doc.MaxDelay)
+
+	dbFile := fmt.Sprintf("%s/katzenpost_client.db", c.cfg.DataDir)
+	c.store, err = storage.New(dbFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// ensure each account has a boltdb bucket
+	identities := c.cfg.AccountIdentities()
+	c.store.CreateAccountBuckets(identities)
+
+	fetchers := make(map[string]*proxy.Fetcher)
+	senders := make(map[string]*proxy.Sender)
+	for _, identity := range identities {
+		privateKey, err := c.accountsMap.GetIdentityKey(identity)
+		if err != nil {
+			return nil, err
+		}
+		handler := block.NewHandler(privateKey, rand.Reader)
+		sender, err := proxy.NewSender(identity, c.providerSessionPool, c.store, c.routeFactory, c.userPKI, handler)
+		if err != nil {
+			return nil, err
+		}
+		senders[identity] = sender
+	}
+	c.sendScheduler = proxy.NewSendScheduler(senders)
+	for _, identity := range identities {
+		privateKey, err := c.accountsMap.GetIdentityKey(identity)
+		if err != nil {
+			return nil, err
+		}
+		handler := block.NewHandler(privateKey, rand.Reader)
+		fetcher := proxy.NewFetcher(identity, c.providerSessionPool, c.store, c.sendScheduler, handler)
+		fetchers[identity] = fetcher
+	}
+
+	c.smtpProxy = proxy.NewSmtpProxy(c.accountsMap, rand.Reader, c.userPKI, c.store, c.providerSessionPool, c.routeFactory, c.sendScheduler)
+	c.periodicRetriever = proxy.NewFetchScheduler(fetchers, time.Second*7)
+	c.periodicRetriever.Start()
+	c.pop3Service = proxy.NewPop3Service(c.store)
+	c.smtpServer = server.New(cfg.SMTPProxy.Network, cfg.SMTPProxy.Address, c.smtpProxy.HandleSMTPSubmission, nil)
+	c.pop3Server = server.New(cfg.POP3Proxy.Network, cfg.POP3Proxy.Address, c.pop3Service.HandleConnection, nil)
+
+	err = c.smtpServer.Start()
+	if err != nil {
+		return nil, err
+	}
+	err = c.pop3Server.Start()
+	if err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
