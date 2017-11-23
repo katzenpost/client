@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/katzenpost/client/constants"
@@ -187,7 +188,8 @@ func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
 //   * constants.KeyStatusPrivate
 //   * constants.KeyStatusPublic
 func CreateKeyFileName(keysDir, keyType, name, provider, keyStatus string) string {
-	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, keyType, name, provider, keyStatus)
+	pemFile := fmt.Sprintf("%s_%s@%s.%s.pem", keyType, name, provider, keyStatus)
+	return filepath.Join(keysDir, pemFile)
 }
 
 // GetAccountKey decrypts and returns a private key material or an error
