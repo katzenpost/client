@@ -184,7 +184,9 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecd
 	// for each epoch create a PKI Document and index it by epoch
 	for current := startEpoch; current < startEpoch+3+1; current++ {
 		pkiDocument := pki.Document{
-			Epoch: current,
+			Epoch:    current,
+			Lambda:   float64(.00123),
+			MaxDelay: uint64(666),
 		}
 		// topology
 		pkiDocument.Topology = make([][]*pki.MixDescriptor, layerMax+1)
@@ -331,9 +333,7 @@ func TestSender(t *testing.T) {
 
 	mixPKI, keysMap := newMixPKI(require)
 	nrHops := 5
-	lambda := float64(.123)
-	maxDelay := uint64(666)
-	routeFactory := path_selection.New(mixPKI, nrHops, lambda, maxDelay)
+	routeFactory := path_selection.New(mixPKI, nrHops)
 
 	aliceEmail := "alice@acme.com"
 	alicePool, aliceStore, alicePrivKey, aliceBlockHandler := makeUser(require, aliceEmail)

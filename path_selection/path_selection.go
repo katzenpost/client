@@ -84,10 +84,8 @@ func getFutureEpoch(hopDuration time.Duration) uint64 {
 // hop in the route where the mean of this distribution is tuneable
 // using the lambda parameter.
 type RouteFactory struct {
-	pki         pki.Client
-	numHops     int
-	lambda      float64
-	maxHopDelay uint64
+	pki     pki.Client
+	numHops int
 }
 
 // New creates a new RouteFactory for creating routes
@@ -95,14 +93,10 @@ type RouteFactory struct {
 // * pki - a client PKI interface
 // * numHops - number of total hops in the route including
 //   ingress and egress mixnet Providers.
-// * lambda - parameter to manipulate the exponential distribution
-//   that our per hop Poisson mix delays are sampled from.
-func New(pki pki.Client, numHops int, lambda float64, maxHopDelay uint64) *RouteFactory {
+func New(pki pki.Client, numHops int) *RouteFactory {
 	r := RouteFactory{
-		pki:         pki,
-		numHops:     numHops,
-		lambda:      lambda,
-		maxHopDelay: maxHopDelay,
+		pki:     pki,
+		numHops: numHops,
 	}
 	return &r
 }
@@ -225,6 +219,18 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	return path, surbID, nil
 }
 
+// getLambdaAndMaxDelay returns the Poisson Lambda parameter AND
+// the max delay per hop or an error
+func (r *RouteFactory) getLambdaAndMaxDelay() (lambda float64, maxDelay uint64, err error) {
+	ctx := context.TODO() // XXX fix me
+	epoch, _, _ := epochtime.Now()
+	doc, err := r.pki.Get(ctx, epoch)
+	if err != nil {
+		return lambda, maxDelay, err
+	}
+	return doc.Lambda, doc.MaxDelay, err
+}
+
 // next returns a new forward path, reply path, SURB_ID and error.
 // This implements section 5.2 Path selection algorithm of the
 // Panoramix Mix Network End-to-end Protocol Specification
@@ -236,10 +242,16 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 	var err error
 	var rtt, till time.Duration
 	var forwardDelays, replyDelays []float64
+
+	lambda, maxHopDelay, err := r.getLambdaAndMaxDelay()
+	if err != nil {
+		return nil, nil, nil, rtt, err
+	}
+
 	for {
 		// 1. Sample all forward and SURB delays.
-		forwardDelays = getDelays(r.lambda, r.maxHopDelay, r.numHops)
-		replyDelays = getDelays(r.lambda, r.maxHopDelay, r.numHops)
+		forwardDelays = getDelays(lambda, maxHopDelay, r.numHops)
+		replyDelays = getDelays(lambda, maxHopDelay, r.numHops)
 		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.

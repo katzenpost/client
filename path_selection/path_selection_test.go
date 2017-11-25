@@ -166,7 +166,9 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecd
 	// for each epoch create a PKI Document and index it by epoch
 	for current := startEpoch; current < startEpoch+3+1; current++ {
 		pkiDocument := pki.Document{
-			Epoch: current,
+			Epoch:    current,
+			Lambda:   float64(.00123),
+			MaxDelay: uint64(666),
 		}
 		// topology
 		pkiDocument.Topology = make([][]*pki.MixDescriptor, layerMax+1)
@@ -194,9 +196,7 @@ func TestPathSelection(t *testing.T) {
 	require := require.New(t)
 	mixPKI, _ := newMixPKI(require)
 	nrHops := 5
-	lambda := float64(.00123)
-	maxHopDelay := uint64(666)
-	factory := New(mixPKI, nrHops, lambda, maxHopDelay)
+	factory := New(mixPKI, nrHops)
 
 	senderProvider := "acme.com"
 	recipientProvider := "nsa.gov"
@@ -217,9 +217,7 @@ func TestGetRouteDescriptors(t *testing.T) {
 
 	mixPKI, _ := newMixPKI(require)
 	nrHops := 5
-	lambda := float64(.00123)
-	maxHopDelay := uint64(666)
-	factory := New(mixPKI, nrHops, lambda, maxHopDelay)
+	factory := New(mixPKI, nrHops)
 
 	descriptors, err := factory.getRouteDescriptors("nsa.gov", "acme.com")
 	require.NoError(err, "getRouteDescriptor failure")

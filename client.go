@@ -18,7 +18,6 @@
 package client
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -37,7 +36,6 @@ import (
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
@@ -157,18 +155,11 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	}
 
 	c.peerAuthenticator = auth.New(c.logBackend, c.mixPKI)
-	c.providerSessionPool, err = session_pool.New(c.accountsMap, c.cfg, c.peerAuthenticator, c.mixPKI) // XXX
+	c.providerSessionPool, err = session_pool.New(c.accountsMap, c.cfg, c.peerAuthenticator, c.mixPKI)
 	if err != nil {
 		return nil, err
 	}
-
-	ctx := context.TODO()
-	epoch, _, _ := epochtime.Now()
-	doc, err := c.mixPKI.Get(ctx, epoch)
-	if err != nil {
-		return nil, err
-	}
-	c.routeFactory = path_selection.New(c.mixPKI, constants.HopsPerPath, doc.Lambda, doc.MaxDelay) // XXX add logging
+	c.routeFactory = path_selection.New(c.mixPKI, constants.HopsPerPath)
 
 	dbFile := fmt.Sprintf("%s/katzenpost_client.db", c.cfg.DataDir)
 	c.store, err = storage.New(dbFile)

@@ -66,9 +66,7 @@ func TestEndToEndProxy(t *testing.T) {
 	mixPKI, keysMap := newMixPKI(require)
 
 	nrHops := 5
-	lambda := float64(.123)
-	maxDelay := uint64(666)
-	routeFactory := path_selection.New(mixPKI, nrHops, lambda, maxDelay)
+	routeFactory := path_selection.New(mixPKI, nrHops)
 	logBackend, err := log.New("e2e_test", "DEBUG", false)
 	require.NoError(err, "failed creating log backend")
 	aliceSender, err := NewSender(logBackend, aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
