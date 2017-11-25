@@ -260,11 +260,11 @@ func (m MockUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
 func makeUser(require *require.Assertions, identity string) (*session_pool.SessionPool, *storage.Store, *ecdh.PrivateKey, *block.Handler) {
 	mockSession := &MockSession{}
 	pool := &session_pool.SessionPool{
-		Sessions: make(map[string]wire.SessionInterface),
-		Locks:    make(map[string]*sync.Mutex),
+		Sessions:     make(map[string]wire.SessionInterface),
+		SessionLocks: make(map[string]*sync.Mutex),
 	}
 	pool.Sessions[identity] = mockSession
-	pool.Locks[identity] = new(sync.Mutex)
+	pool.SessionLocks[identity] = new(sync.Mutex)
 
 	dbFile, err := ioutil.TempFile("", "db_test_sender")
 	require.NoError(err, "unexpected TempFile error")
