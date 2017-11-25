@@ -78,7 +78,7 @@ func TestEndToEndProxy(t *testing.T) {
 	}
 	sendScheduler := NewSendScheduler(logBackend, senders)
 
-	submitProxy := NewSmtpProxy(logBackend, &accounts, rand.Reader, userPKI, aliceStore, alicePool, routeFactory, sendScheduler)
+	submitProxy := NewSmtpProxy(logBackend, &accounts, rand.Reader, userPKI, aliceStore, routeFactory, sendScheduler)
 	aliceServerConn, aliceClientConn := net.Pipe()
 	var wg sync.WaitGroup
 	wg.Add(2)

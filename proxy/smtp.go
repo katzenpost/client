@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/path_selection"
-	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/log"
@@ -161,9 +160,6 @@ type SubmitProxy struct {
 	// store is used to persist messages to disk
 	store *storage.Store
 
-	// session pool of connections to each provider
-	sessionPool *session_pool.SessionPool
-
 	// routeFactory is used to create mixnet routes
 	routeFactory *path_selection.RouteFactory
 
@@ -174,7 +170,7 @@ type SubmitProxy struct {
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
+func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
 	submissionProxy := SubmitProxy{
 		log:          logBackend.GetLogger("SubmitProxy"),
 		logBackend:   logBackend,
@@ -182,7 +178,6 @@ func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomR
 		randomReader: randomReader,
 		userPKI:      userPki,
 		store:        store,
-		sessionPool:  pool,
 		routeFactory: routeFactory,
 		scheduler:    scheduler,
 		whitelist: []string{ // XXX yawning fix me

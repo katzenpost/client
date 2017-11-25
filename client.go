@@ -205,7 +205,7 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 		fetchers[identity] = fetcher
 	}
 
-	c.smtpProxy = proxy.NewSmtpProxy(c.logBackend, c.accountsMap, rand.Reader, c.userPKI, c.store, c.providerSessionPool, c.routeFactory, c.sendScheduler)
+	c.smtpProxy = proxy.NewSmtpProxy(c.logBackend, c.accountsMap, rand.Reader, c.userPKI, c.store, c.routeFactory, c.sendScheduler)
 	c.periodicRetriever = proxy.NewFetchScheduler(c.logBackend, fetchers, time.Second*7)
 	c.periodicRetriever.Start()
 	c.pop3Service = proxy.NewPop3Service(c.store)
