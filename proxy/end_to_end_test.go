@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/require"
@@ -68,15 +69,16 @@ func TestEndToEndProxy(t *testing.T) {
 	lambda := float64(.123)
 	maxDelay := uint64(666)
 	routeFactory := path_selection.New(mixPKI, nrHops, lambda, maxDelay)
-
-	aliceSender, err := NewSender(aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
+	logBackend, err := log.New("e2e_test", "DEBUG", false)
+	require.NoError(err, "failed creating log backend")
+	aliceSender, err := NewSender(logBackend, aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
 	require.NoError(err, "NewSender failure")
 	senders := map[string]*Sender{
 		aliceEmail: aliceSender,
 	}
-	sendScheduler := NewSendScheduler(senders)
+	sendScheduler := NewSendScheduler(logBackend, senders)
 
-	submitProxy := NewSmtpProxy(&accounts, rand.Reader, userPKI, aliceStore, alicePool, routeFactory, sendScheduler)
+	submitProxy := NewSmtpProxy(logBackend, &accounts, rand.Reader, userPKI, aliceStore, alicePool, routeFactory, sendScheduler)
 	aliceServerConn, aliceClientConn := net.Pipe()
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -172,6 +174,7 @@ func TestEndToEndProxy(t *testing.T) {
 
 	bobStore.CreateAccountBuckets([]string{bobEmail})
 	bobFetcher := Fetcher{
+		log:      logBackend.GetLogger("bob_fetcher"),
 		Identity: bobEmail,
 		pool:     bobPool,
 		store:    bobStore,
@@ -190,7 +193,6 @@ func TestEndToEndProxy(t *testing.T) {
 
 	queueHintSize, err := bobFetcher.Fetch()
 	require.NoError(err, "Fetch failure")
-
 	t.Logf("queueHintSize %d", queueHintSize)
 
 	pop3Service := NewPop3Service(bobStore)

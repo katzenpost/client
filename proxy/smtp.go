@@ -30,12 +30,11 @@ import (
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
+	"github.com/katzenpost/core/log"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
-
-var log = logging.MustGetLogger("mixclient")
 
 // logWriter is used to present the io.Reader interface
 // to our SMTP library for logging. this is only required
@@ -145,6 +144,8 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 // daemon, accepting e-mail messages and proxying them to the mix network
 // via the Providers.
 type SubmitProxy struct {
+	log        *logging.Logger
+	logBackend *log.Backend
 
 	// accounts is a mapping of emails to private keys
 	accounts *config.AccountsMap
@@ -173,8 +174,10 @@ type SubmitProxy struct {
 }
 
 // NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
+func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
 	submissionProxy := SubmitProxy{
+		log:          logBackend.GetLogger("SubmitProxy"),
+		logBackend:   logBackend,
 		accounts:     accounts,
 		randomReader: randomReader,
 		userPKI:      userPki,
@@ -232,7 +235,8 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 // handleSMTPSubmission handles the SMTP submissions
 func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
-	logWriter := newLogWriter(log)
+	//logWriter := newLogWriter(log)
+	logWriter := p.logBackend.GetLogWriter("SubmitProxy-SMTP", "DEBUG")
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
 	sender := ""
 	receiver := ""
@@ -244,13 +248,13 @@ func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
 			senderAddr, err := mail.ParseAddress(event.Arg)
 			if err != nil {
-				log.Debug("sender address parse fail")
+				p.log.Debug("sender address parse fail")
 				smtpConn.Reject()
 				return err
 			}
 			sender = senderAddr.Address
 			if _, err = p.accounts.GetIdentityKey(sender); err != nil {
-				log.Debug("client identity not found")
+				p.log.Debug("client identity not found")
 				smtpConn.Reject()
 				return nil
 			}
@@ -258,14 +262,14 @@ func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
 			receiverAddr, err := mail.ParseAddress(strings.ToLower(event.Arg))
 			if err != nil {
-				log.Debug("recipient address parse fail")
+				p.log.Debug("recipient address parse fail")
 				smtpConn.Reject()
 				return err
 			}
 			receiver = receiverAddr.Address
 			_, err = p.userPKI.GetKey(receiver)
 			if err != nil {
-				log.Debugf("user PKI: email %s not found", receiver)
+				p.log.Debugf("user PKI: email %s not found", receiver)
 				smtpConn.Reject()
 				return nil
 			}
@@ -277,7 +281,7 @@ func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
 			}
 			id := message.Header.Get("X-Panoramix-Sender-Identity-Key")
 			if len(id) != 0 {
-				log.Debug("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
+				p.log.Debug("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
 				smtpConn.Reject()
 				return nil
 			}

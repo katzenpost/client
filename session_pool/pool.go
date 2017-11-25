@@ -29,10 +29,7 @@ import (
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
-	"github.com/op/go-logging"
 )
-
-var log = logging.MustGetLogger("mixclient")
 
 // SessionPool maps sender email string to sender identity
 // wire protocol session with the Provider

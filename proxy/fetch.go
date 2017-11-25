@@ -19,19 +19,23 @@ package proxy
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/scheduler"
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire/commands"
+	"github.com/op/go-logging"
 )
 
 // Fetcher fetches messages for a given account identity
 type Fetcher struct {
+	log       *logging.Logger
 	Identity  string
 	sequence  uint32
 	pool      *session_pool.SessionPool
@@ -40,8 +44,9 @@ type Fetcher struct {
 	handler   *block.Handler
 }
 
-func NewFetcher(identity string, pool *session_pool.SessionPool, store *storage.Store, scheduler *SendScheduler, handler *block.Handler) *Fetcher {
+func NewFetcher(logBackend *log.Backend, identity string, pool *session_pool.SessionPool, store *storage.Store, scheduler *SendScheduler, handler *block.Handler) *Fetcher {
 	return &Fetcher{
+		log:       logBackend.GetLogger(fmt.Sprintf("Fetcher-%s", identity)),
 		Identity:  identity,
 		pool:      pool,
 		store:     store,
@@ -76,7 +81,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 		return uint8(0), err
 	}
 	if ack, ok := recvCmd.(commands.MessageACK); ok {
-		log.Debug("retrieved MessageACK")
+		f.log.Debug("retrieved MessageACK")
 		queueHintSize = ack.QueueSizeHint
 		rSeq = ack.Sequence
 		err := f.processAck(ack.ID, ack.Payload)
@@ -84,7 +89,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 			return uint8(0), err
 		}
 	} else if message, ok := recvCmd.(commands.Message); ok {
-		log.Debug("retrieved Message")
+		f.log.Debug("retrieved Message")
 		queueHintSize = message.QueueSizeHint
 		rSeq = message.Sequence
 		err := f.processMessage(message.Payload)
@@ -93,12 +98,12 @@ func (f *Fetcher) Fetch() (uint8, error) {
 		}
 	} else {
 		err := errors.New("retrieved non-Message/MessageACK wire protocol command")
-		log.Debug(err)
+		f.log.Debug(err)
 		return uint8(0), err
 	}
 	if rSeq != f.sequence {
 		err := errors.New("received sequence mismatch")
-		log.Debug(err)
+		f.log.Debug(err)
 		return uint8(0), err
 	}
 	f.sequence += 1
@@ -166,6 +171,7 @@ func (f *Fetcher) processMessage(payload []byte) error {
 // FetchScheduler is scheduler which is used to periodically
 // fetch messages using a set of fetchers
 type FetchScheduler struct {
+	log      *logging.Logger
 	fetchers map[string]*Fetcher
 	sched    *scheduler.PriorityScheduler
 	duration time.Duration
@@ -173,8 +179,9 @@ type FetchScheduler struct {
 
 // NewFetchScheduler creates a new FetchScheduler
 // given a slice of identity strings and a duration
-func NewFetchScheduler(fetchers map[string]*Fetcher, duration time.Duration) *FetchScheduler {
+func NewFetchScheduler(logBackend *log.Backend, fetchers map[string]*Fetcher, duration time.Duration) *FetchScheduler {
 	s := FetchScheduler{
+		log:      logBackend.GetLogger("FetchScheduler"),
 		fetchers: fetchers,
 		duration: duration,
 	}
@@ -203,18 +210,18 @@ func (s *FetchScheduler) Shutdown() {
 func (s *FetchScheduler) handleFetch(task interface{}) {
 	identity, ok := task.(string)
 	if !ok {
-		log.Error("FetchScheduler got invalid task from priority scheduler.")
+		s.log.Error("FetchScheduler got invalid task from priority scheduler.")
 		return
 	}
 	fetcher, ok := s.fetchers[identity]
 	if !ok {
 		err := errors.New("fetcher identity not found")
-		log.Error(err)
+		s.log.Error(err)
 		return
 	}
 	queueSizeHint, err := fetcher.Fetch()
 	if err != nil {
-		log.Error(err)
+		s.log.Error(err)
 		return
 	}
 	if queueSizeHint == 0 {

@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
 	sphinxcommands "github.com/katzenpost/core/sphinx/commands"
@@ -346,10 +347,13 @@ func TestSender(t *testing.T) {
 		},
 	}
 
-	aliceSender, err := NewSender("alice@acme.com", alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
+	logBackend, err := log.New("send_test", "DEBUG", false)
+	require.NoError(err, "failed creating log backend")
+
+	aliceSender, err := NewSender(logBackend, "alice@acme.com", alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
 	require.NoError(err, "NewSender failure")
 
-	bobSender, err := NewSender("bob@nsa.gov", bobPool, bobStore, routeFactory, userPKI, bobBlockHandler)
+	bobSender, err := NewSender(logBackend, "bob@nsa.gov", bobPool, bobStore, routeFactory, userPKI, bobBlockHandler)
 	require.NoError(err, "NewSender failure")
 
 	// Alice sends message to Bob

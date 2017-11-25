@@ -22,8 +22,10 @@ import (
 	"crypto/subtle"
 
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
+	"github.com/op/go-logging"
 )
 
 // ProviderAuthenticator implements the PeerAuthenticator interface
@@ -32,16 +34,19 @@ import (
 // as specified in core/wire/session.go
 type ProviderAuthenticator struct {
 	mixPKI pki.Client
+	log    *logging.Logger
 }
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a ProviderAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
+	a.log.Debugf("IsPeerValid: %s", string(peer.AdditionalData))
 	ctx := context.TODO() // XXX set a deadline
 	epoch, _, _ := epochtime.Now()
 	doc, err := a.mixPKI.Get(ctx, epoch)
 	if err != nil {
 		// XXX log the error
+		a.log.Errorf("Failed to retreive PKI document: %v", err)
 		return false
 	}
 	providerName := string(peer.AdditionalData)
@@ -58,9 +63,10 @@ func (a ProviderAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
 }
 
 // New returns a new ProviderAuthenticator
-func New(mixPKI pki.Client) *ProviderAuthenticator {
+func New(logBackend *log.Backend, mixPKI pki.Client) *ProviderAuthenticator {
 	a := ProviderAuthenticator{
 		mixPKI: mixPKI,
+		log:    logBackend.GetLogger("ProviderAuthenticator"),
 	}
 	return &a
 }

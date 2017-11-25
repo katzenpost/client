@@ -18,6 +18,7 @@ package proxy
 
 import (
 	"encoding/binary"
+	"fmt"
 	"sync"
 	"time"
 
@@ -30,10 +31,12 @@ import (
 	"github.com/katzenpost/client/user_pki"
 	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
+	"github.com/op/go-logging"
 )
 
 // Sender is used to send a message over the mixnet
@@ -45,15 +48,17 @@ type Sender struct {
 	routeFactory *path_selection.RouteFactory
 	userPKI      user_pki.UserPKI
 	handler      *block.Handler
+	log          *logging.Logger
 }
 
 // NewSender creates a new Sender
-func NewSender(identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) (*Sender, error) {
+func NewSender(logBackend *log.Backend, identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) (*Sender, error) {
 	session, mutex, err := pool.Get(identity)
 	if err != nil {
 		return nil, err
 	}
 	s := Sender{
+		log:          logBackend.GetLogger(fmt.Sprintf("Sender-%s", identity)),
 		mutex:        mutex,
 		session:      session,
 		identity:     identity,
@@ -136,6 +141,7 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 // SendScheduler is used to send messages and schedule the retransmission
 // if the ACK wasn't received in time
 type SendScheduler struct {
+	log          *logging.Logger
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
 	cancellation map[[sphinxConstants.SURBIDLength]byte]bool
@@ -144,8 +150,9 @@ type SendScheduler struct {
 // NewSendScheduler creates a new SendScheduler which is used
 // to implement our Stop and Wait ARQ for sending messages
 // on behalf of one or more user identities
-func NewSendScheduler(senders map[string]*Sender) *SendScheduler {
+func NewSendScheduler(logBackend *log.Backend, senders map[string]*Sender) *SendScheduler {
 	s := SendScheduler{
+		log:          logBackend.GetLogger("SendScheduler"),
 		senders:      senders,
 		cancellation: make(map[[sphinxConstants.SURBIDLength]byte]bool),
 	}
@@ -175,12 +182,12 @@ func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 	_, ok := s.cancellation[id]
 	if ok {
 		if s.cancellation[id] {
-			log.Errorf("SendScheduler Cancellation with SURB ID %x already cancelled", id)
+			s.log.Errorf("SendScheduler Cancellation with SURB ID %x already cancelled", id)
 		} else {
 			s.cancellation[id] = true
 		}
 	} else {
-		log.Error("SendScheduler Cancellation received an unknown SURB ID")
+		s.log.Error("SendScheduler Cancellation received an unknown SURB ID")
 	}
 }
 
@@ -189,14 +196,14 @@ func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 func (s *SendScheduler) handleSend(task interface{}) {
 	storageBlock, ok := task.(*storage.EgressBlock)
 	if !ok {
-		log.Error("SendScheduler got invalid task from priority scheduler.")
+		s.log.Error("SendScheduler got invalid task from priority scheduler.")
 		return
 	}
 	_, ok = s.cancellation[storageBlock.SURBID]
 	if !ok {
 		rtt, err := s.senders[storageBlock.Sender].Send(&storageBlock.BlockID, storageBlock)
 		if err != nil {
-			log.Error(err)
+			s.log.Error(err)
 		}
 		s.add(rtt, storageBlock)
 	}

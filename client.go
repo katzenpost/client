@@ -156,8 +156,8 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 		return nil, err
 	}
 
-	c.peerAuthenticator = auth.New(c.mixPKI)
-	c.providerSessionPool, err = session_pool.New(c.accountsMap, c.cfg, c.peerAuthenticator, c.mixPKI)
+	c.peerAuthenticator = auth.New(c.logBackend, c.mixPKI)
+	c.providerSessionPool, err = session_pool.New(c.accountsMap, c.cfg, c.peerAuthenticator, c.mixPKI) // XXX
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if err != nil {
 		return nil, err
 	}
-	c.routeFactory = path_selection.New(c.mixPKI, constants.HopsPerPath, doc.Lambda, doc.MaxDelay)
+	c.routeFactory = path_selection.New(c.mixPKI, constants.HopsPerPath, doc.Lambda, doc.MaxDelay) // XXX add logging
 
 	dbFile := fmt.Sprintf("%s/katzenpost_client.db", c.cfg.DataDir)
 	c.store, err = storage.New(dbFile)
@@ -188,25 +188,25 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 			return nil, err
 		}
 		handler := block.NewHandler(privateKey, rand.Reader)
-		sender, err := proxy.NewSender(identity, c.providerSessionPool, c.store, c.routeFactory, c.userPKI, handler)
+		sender, err := proxy.NewSender(c.logBackend, identity, c.providerSessionPool, c.store, c.routeFactory, c.userPKI, handler)
 		if err != nil {
 			return nil, err
 		}
 		senders[identity] = sender
 	}
-	c.sendScheduler = proxy.NewSendScheduler(senders)
+	c.sendScheduler = proxy.NewSendScheduler(c.logBackend, senders)
 	for _, identity := range identities {
 		privateKey, err := c.accountsMap.GetIdentityKey(identity)
 		if err != nil {
 			return nil, err
 		}
 		handler := block.NewHandler(privateKey, rand.Reader)
-		fetcher := proxy.NewFetcher(identity, c.providerSessionPool, c.store, c.sendScheduler, handler)
+		fetcher := proxy.NewFetcher(c.logBackend, identity, c.providerSessionPool, c.store, c.sendScheduler, handler)
 		fetchers[identity] = fetcher
 	}
 
-	c.smtpProxy = proxy.NewSmtpProxy(c.accountsMap, rand.Reader, c.userPKI, c.store, c.providerSessionPool, c.routeFactory, c.sendScheduler)
-	c.periodicRetriever = proxy.NewFetchScheduler(fetchers, time.Second*7)
+	c.smtpProxy = proxy.NewSmtpProxy(c.logBackend, c.accountsMap, rand.Reader, c.userPKI, c.store, c.providerSessionPool, c.routeFactory, c.sendScheduler)
+	c.periodicRetriever = proxy.NewFetchScheduler(c.logBackend, fetchers, time.Second*7)
 	c.periodicRetriever.Start()
 	c.pop3Service = proxy.NewPop3Service(c.store)
 	c.smtpServer = server.New(cfg.SMTPProxy.Network, cfg.SMTPProxy.Address, c.smtpProxy.HandleSMTPSubmission, nil)
