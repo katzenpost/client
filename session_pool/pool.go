@@ -85,11 +85,6 @@ func New(accounts *config.AccountsMap, config *config.Config, providerAuthentica
 	return &s, nil
 }
 
-func (s *SessionPool) Add(identity string, session wire.SessionInterface) {
-	s.Sessions[identity] = session
-	s.Locks[identity] = &sync.Mutex{}
-}
-
 func (s *SessionPool) Get(identity string) (wire.SessionInterface, *sync.Mutex, error) {
 	v, ok := s.Sessions[identity]
 	if !ok {

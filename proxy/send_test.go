@@ -263,7 +263,8 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 		Sessions: make(map[string]wire.SessionInterface),
 		Locks:    make(map[string]*sync.Mutex),
 	}
-	pool.Add(identity, mockSession)
+	pool.Sessions[identity] = mockSession
+	pool.Locks[identity] = new(sync.Mutex)
 
 	dbFile, err := ioutil.TempFile("", "db_test_sender")
 	require.NoError(err, "unexpected TempFile error")
