@@ -63,7 +63,7 @@ type Client struct {
 	store             *storage.Store
 	sendScheduler     *proxy.SendScheduler
 	periodicRetriever *proxy.FetchScheduler
-	smtpProxy         *proxy.SubmitProxy
+	smtpProxy         *proxy.SMTPProxy
 	pop3Service       *proxy.Pop3Service
 	smtpServer        *server.Server
 	pop3Server        *server.Server

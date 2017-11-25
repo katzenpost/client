@@ -139,10 +139,10 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 	return buf.String(), nil
 }
 
-// SubmitProxy handles SMTP mail submissions. This means we act as an SMTP
+// SMTPProxy handles SMTP mail submissions. This means we act as an SMTP
 // daemon, accepting e-mail messages and proxying them to the mix network
 // via the Providers.
-type SubmitProxy struct {
+type SMTPProxy struct {
 	log        *logging.Logger
 	logBackend *log.Backend
 
@@ -169,10 +169,10 @@ type SubmitProxy struct {
 	scheduler *SendScheduler
 }
 
-// NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
-	submissionProxy := SubmitProxy{
-		log:          logBackend.GetLogger("SubmitProxy"),
+// NewSmtpProxy creates a new SMTPProxy struct
+func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SMTPProxy {
+	submissionProxy := SMTPProxy{
+		log:          logBackend.GetLogger("SMTPProxy"),
 		logBackend:   logBackend,
 		accounts:     accounts,
 		randomReader: randomReader,
@@ -193,7 +193,7 @@ func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomR
 
 // enqueueMessage enqueues the message in our persistent message store
 // so that it can soon be sent on it's way to the recipient.
-func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) error {
+func (p *SMTPProxy) enqueueMessage(sender, receiver string, message []byte) error {
 	blocks, err := fragmentMessage(p.randomReader, message)
 	if err != nil {
 		return err
@@ -228,10 +228,10 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 }
 
 // handleSMTPSubmission handles the SMTP submissions
-func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
+func (p *SMTPProxy) HandleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
 	//logWriter := newLogWriter(log)
-	logWriter := p.logBackend.GetLogWriter("SubmitProxy-SMTP", "DEBUG")
+	logWriter := p.logBackend.GetLogWriter("SMTPProxy-SMTP", "DEBUG")
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
 	sender := ""
 	receiver := ""
