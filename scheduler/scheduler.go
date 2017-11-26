@@ -78,7 +78,9 @@ func (s *PriorityScheduler) Add(duration time.Duration, task interface{}) {
 
 // Shutdown shuts down the scheduler
 func (s *PriorityScheduler) Shutdown() {
-	if !s.timer.Stop() {
-		<-s.timer.C
+	if s.timer != nil {
+		if !s.timer.Stop() {
+			<-s.timer.C
+		}
 	}
 }
