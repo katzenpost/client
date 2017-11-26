@@ -80,24 +80,28 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	if err != nil {
 		return uint8(0), err
 	}
-	if ack, ok := recvCmd.(commands.MessageACK); ok {
+	switch cmd := recvCmd.(type) {
+	case *commands.MessageACK:
 		f.log.Debug("retrieved MessageACK")
-		queueHintSize = ack.QueueSizeHint
-		rSeq = ack.Sequence
-		err := f.processAck(ack.ID, ack.Payload)
+		queueHintSize = cmd.QueueSizeHint
+		rSeq = cmd.Sequence
+		err := f.processAck(cmd.ID, cmd.Payload)
 		if err != nil {
 			return uint8(0), err
 		}
-	} else if message, ok := recvCmd.(commands.Message); ok {
+	case *commands.Message:
 		f.log.Debug("retrieved Message")
-		queueHintSize = message.QueueSizeHint
-		rSeq = message.Sequence
-		err := f.processMessage(message.Payload)
+		queueHintSize = cmd.QueueSizeHint
+		rSeq = cmd.Sequence
+		err := f.processMessage(cmd.Payload)
 		if err != nil {
 			return uint8(0), err
 		}
-	} else {
-		err := errors.New("retrieved non-Message/MessageACK wire protocol command")
+	case *commands.MessageEmpty:
+		f.log.Debug("retreived MessageEmpty")
+		return 0, nil
+	default:
+		err := fmt.Errorf("retrieved non-Message/MessageACK wire protocol command: %+v", cmd)
 		f.log.Debug(err)
 		return uint8(0), err
 	}
