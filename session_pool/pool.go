@@ -19,7 +19,6 @@ package session_pool
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 
@@ -93,9 +92,8 @@ func (s *SessionPool) Get(identity string) (wire.SessionInterface, *sync.Mutex, 
 	if err != nil {
 		return nil, nil, err
 	}
-	network := providerDesc.Addresses[0]                                 // wrong
-	address := providerDesc.Addresses[1]                                 // wrong
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", network, address)) // XXX fix me
+	// XXX TODO: retry with other addresses if available
+	conn, err := net.Dial("tcp", providerDesc.Addresses[0])
 	if err != nil {
 		return nil, nil, err
 	}
