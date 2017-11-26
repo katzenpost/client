@@ -19,7 +19,6 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/katzenpost/client/constants"
@@ -34,16 +33,14 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/op/go-logging"
 )
 
 // Sender is used to send a message over the mixnet
 type Sender struct {
-	mutex        *sync.Mutex
 	identity     string
-	session      wire.SessionInterface
+	pool         *session_pool.SessionPool
 	store        *storage.Store
 	routeFactory *path_selection.RouteFactory
 	userPKI      user_pki.UserPKI
@@ -53,14 +50,9 @@ type Sender struct {
 
 // NewSender creates a new Sender
 func NewSender(logBackend *log.Backend, identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) (*Sender, error) {
-	session, mutex, err := pool.Get(identity)
-	if err != nil {
-		return nil, err
-	}
 	s := Sender{
 		log:          logBackend.GetLogger(fmt.Sprintf("Sender-%s", identity)),
-		mutex:        mutex,
-		session:      session,
+		pool:         pool,
 		identity:     identity,
 		store:        store,
 		routeFactory: routeFactory,
@@ -117,6 +109,10 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 // Send sends an encrypted block over the mixnet
 func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) (time.Duration, error) {
 	var rtt time.Duration
+	session, mutex, err := s.pool.Get(s.identity)
+	if err != nil {
+		return rtt, err
+	}
 	receiverKey, err := s.userPKI.GetKey(storageBlock.Recipient)
 	if err != nil {
 		return rtt, err
@@ -129,9 +125,9 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 	if err != nil {
 		return rtt, err
 	}
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	err = s.session.SendCommand(cmd)
+	mutex.Lock()
+	defer mutex.Unlock()
+	err = session.SendCommand(cmd)
 	if err != nil {
 		return rtt, err
 	}
