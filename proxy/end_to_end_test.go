@@ -67,7 +67,7 @@ func TestEndToEndProxy(t *testing.T) {
 
 	nrHops := 5
 	routeFactory := path_selection.New(mixPKI, nrHops)
-	logBackend, err := log.New("e2e_test", "DEBUG", false)
+	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err, "failed creating log backend")
 	aliceSender, err := NewSender(logBackend, aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
 	require.NoError(err, "NewSender failure")
@@ -187,7 +187,7 @@ func TestEndToEndProxy(t *testing.T) {
 		Sequence:      0,
 		Payload:       bobsCiphertext[hdrLength:],
 	}
-	mockBobSession.recvCommands = append(mockBobSession.recvCommands, msgCmd)
+	mockBobSession.recvCommands = append(mockBobSession.recvCommands, &msgCmd)
 
 	queueHintSize, err := bobFetcher.Fetch()
 	require.NoError(err, "Fetch failure")
