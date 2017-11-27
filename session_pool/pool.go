@@ -56,6 +56,11 @@ func New(accountsKey *config.AccountsMap, config *config.Config, providerAuthent
 	return &s, nil
 }
 
+func (s *SessionPool) Remove(identity string) {
+	delete(s.Sessions, identity)
+	delete(s.SessionLocks, identity)
+}
+
 // Get returns a session and a mutex or an error using a given identity
 // string which is of the form "alice@provider-123", resembling an email address
 func (s *SessionPool) Get(identity string) (wire.SessionInterface, *sync.Mutex, error) {

@@ -75,12 +75,14 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	err = session.SendCommand(cmd)
 	if err != nil {
 		f.log.Debugf("SendCommand failed: %s", err)
+		f.pool.Remove(f.Identity)
 		return uint8(0), err
 	}
 	rSeq := uint32(0)
 	recvCmd, err := session.RecvCommand()
 	if err != nil {
 		f.log.Debugf("RecvCommand failed: %s", err)
+		f.pool.Remove(f.Identity)
 		return uint8(0), err
 	}
 	switch cmd := recvCmd.(type) {
@@ -106,6 +108,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	default:
 		err := errors.New("retrieved non-Message/MessageACK wire protocol command")
 		f.log.Debug(err)
+		f.pool.Remove(f.Identity)
 		return uint8(0), err
 	}
 	if rSeq != f.sequence {
