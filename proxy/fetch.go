@@ -104,7 +104,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 		f.log.Debug("retreived MessageEmpty")
 		return 0, nil
 	default:
-		err := fmt.Errorf("retrieved non-Message/MessageACK wire protocol command: %+v", cmd)
+		err := errors.New("retrieved non-Message/MessageACK wire protocol command")
 		f.log.Debug(err)
 		return uint8(0), err
 	}
