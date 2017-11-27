@@ -226,7 +226,7 @@ func (m *MockSession) SendCommand(cmd commands.Command) error {
 
 func (m *MockSession) RecvCommand() (commands.Command, error) {
 	if len(m.recvCommands) == 0 {
-		return commands.NoOp{}, nil
+		return commands.MessageEmpty{}, nil
 	}
 	retCmd := m.recvCommands[len(m.recvCommands)-1]
 	if len(m.recvCommands)-1 == 0 {
@@ -348,7 +348,7 @@ func TestSender(t *testing.T) {
 		},
 	}
 
-	logBackend, err := log.New("send_test", "DEBUG", false)
+	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err, "failed creating log backend")
 
 	aliceSender, err := NewSender(logBackend, "alice@acme.com", alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
