@@ -39,7 +39,6 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
-	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
 )
 
@@ -63,8 +62,8 @@ type Client struct {
 	periodicRetriever *proxy.FetchScheduler
 	smtpProxy         *proxy.SMTPProxy
 	pop3Service       *proxy.Pop3Service
-	smtpServer        *server.Server
-	pop3Server        *server.Server
+	smtpServer        *listener
+	pop3Server        *listener
 }
 
 func (c *Client) initDataDir() error {
@@ -110,8 +109,8 @@ func (c *Client) initLogging() error {
 
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
-	c.smtpServer.Stop()
-	c.pop3Server.Stop()
+	c.smtpServer.halt()
+	c.pop3Server.halt()
 	c.sendScheduler.Shutdown()
 	c.periodicRetriever.Shutdown()
 }
@@ -200,14 +199,12 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	c.periodicRetriever = proxy.NewFetchScheduler(c.logBackend, fetchers, time.Second*7)
 	c.periodicRetriever.Start()
 	c.pop3Service = proxy.NewPop3Service(c.store)
-	c.smtpServer = server.New(cfg.SMTPProxy.Network, cfg.SMTPProxy.Address, c.smtpProxy.HandleSMTPSubmission, nil)
-	c.pop3Server = server.New(cfg.POP3Proxy.Network, cfg.POP3Proxy.Address, c.pop3Service.HandleConnection, nil)
 
-	err = c.smtpServer.Start()
+	c.smtpServer, err = newListener(cfg.SMTPProxy.Address, c.smtpProxy.HandleSMTPSubmission, c.logBackend)
 	if err != nil {
 		return nil, err
 	}
-	err = c.pop3Server.Start()
+	c.pop3Server, err = newListener(cfg.POP3Proxy.Address, c.pop3Service.HandleConnection, c.logBackend)
 	if err != nil {
 		return nil, err
 	}
