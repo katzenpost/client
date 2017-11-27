@@ -64,6 +64,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	var queueHintSize uint8
 	session, mutex, err := f.pool.Get(f.Identity)
 	if err != nil {
+		f.log.Debugf("Failed to get session from pool: %s", err)
 		return uint8(0), err
 	}
 	mutex.Lock()
@@ -73,11 +74,13 @@ func (f *Fetcher) Fetch() (uint8, error) {
 	}
 	err = session.SendCommand(cmd)
 	if err != nil {
+		f.log.Debugf("SendCommand failed: %s", err)
 		return uint8(0), err
 	}
 	rSeq := uint32(0)
 	recvCmd, err := session.RecvCommand()
 	if err != nil {
+		f.log.Debugf("RecvCommand failed: %s", err)
 		return uint8(0), err
 	}
 	switch cmd := recvCmd.(type) {
@@ -195,13 +198,16 @@ func NewFetchScheduler(logBackend *log.Backend, fetchers map[string]*Fetcher, du
 
 // Start starts our periodic message checking scheduler
 func (s *FetchScheduler) Start() {
+	s.log.Debug("Starting")
 	for _, fetcher := range s.fetchers {
+		s.log.Debugf("Adding fetcher with cyclic duration %v", s.duration)
 		s.sched.Add(s.duration, fetcher.Identity)
 	}
 }
 
 // Shutdown shuts down the scheduler
 func (s *FetchScheduler) Shutdown() {
+	s.log.Debug("Shutting down")
 	s.sched.Shutdown()
 }
 
@@ -217,6 +223,7 @@ func (s *FetchScheduler) handleFetch(task interface{}) {
 		s.log.Error("FetchScheduler got invalid task from priority scheduler.")
 		return
 	}
+	s.log.Debugf("handleFetch for identity: %s", identity)
 	fetcher, ok := s.fetchers[identity]
 	if !ok {
 		err := errors.New("fetcher identity not found")
@@ -229,8 +236,10 @@ func (s *FetchScheduler) handleFetch(task interface{}) {
 		return
 	}
 	if queueSizeHint == 0 {
+		s.log.Debugf("%s queueSizeHint is zero, scheduling next fetch in %v seconds", identity, s.duration)
 		s.sched.Add(s.duration, identity)
 	} else {
+		s.log.Debugf("%s queueSizeHing is %d, scheduling next fetch immediately.", identity, queueSizeHint)
 		s.sched.Add(time.Duration(0), identity)
 	}
 	return
