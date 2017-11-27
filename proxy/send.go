@@ -178,7 +178,7 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 
 // add adds a retransmit job to the scheduler
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.EgressBlock) {
-	s.log.Debugf("add: schedule a send in %v", rtt)
+	s.log.Debugf("schedule a send in %v", rtt)
 	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
 }
 
