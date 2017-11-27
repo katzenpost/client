@@ -108,27 +108,33 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 
 // Send sends an encrypted block over the mixnet
 func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) (time.Duration, error) {
+	s.log.Debug("Send")
 	var rtt time.Duration
 	session, mutex, err := s.pool.Get(s.identity)
 	if err != nil {
+		s.log.Debugf("Failed to get session for %s: %s", s.identity, err)
 		return rtt, err
 	}
 	receiverKey, err := s.userPKI.GetKey(storageBlock.Recipient)
 	if err != nil {
+		s.log.Debugf("Failed to get userPKI key for %s: %s", storageBlock.Recipient, err)
 		return rtt, err
 	}
 	blockCiphertext, err := s.handler.Encrypt(receiverKey, &storageBlock.Block)
 	if err != nil {
+		s.log.Debugf("Failed to encrypt block: %s", err)
 		return rtt, err
 	}
 	cmd, rtt, err := s.composeSphinxPacket(blockID, storageBlock, blockCiphertext)
 	if err != nil {
+		s.log.Debugf("Failed to compose Sphinx packet: %s", err)
 		return rtt, err
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
 	err = session.SendCommand(cmd)
 	if err != nil {
+		s.log.Debugf("SendCommand failed: %s", err)
 		return rtt, err
 	}
 	return rtt, nil
@@ -158,8 +164,10 @@ func NewSendScheduler(logBackend *log.Backend, senders map[string]*Sender) *Send
 
 // Send sends the given block and adds a retransmit job to the scheduler
 func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) error {
+	s.log.Debug("Send")
 	rtt, err := s.senders[sender].Send(blockID, storageBlock)
 	if err != nil {
+		s.log.Debugf("Send failure: %s", err)
 		return err
 	}
 	// schedule a resend in the future
@@ -170,11 +178,13 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 
 // add adds a retransmit job to the scheduler
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.EgressBlock) {
+	s.log.Debugf("add: schedule a send in %v", rtt)
 	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
 }
 
 // Cancel ensures that a given retransmit will not be executed
 func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
+	s.log.Debug("Cancel")
 	_, ok := s.cancellation[id]
 	if ok {
 		if s.cancellation[id] {
@@ -190,6 +200,7 @@ func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 // handleSend is called by the scheduler to perform
 // a retransmit
 func (s *SendScheduler) handleSend(task interface{}) {
+	s.log.Debug("handleSend")
 	storageBlock, ok := task.(*storage.EgressBlock)
 	if !ok {
 		s.log.Error("SendScheduler got invalid task from priority scheduler.")
@@ -207,5 +218,6 @@ func (s *SendScheduler) handleSend(task interface{}) {
 
 // Shutdown shuts down the send scheduler
 func (s *SendScheduler) Shutdown() {
+	s.log.Debug("Shutting down")
 	s.sched.Shutdown()
 }
