@@ -100,6 +100,9 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 	if err != nil {
 		return nil, rtt, err
 	}
+	// if len(sphinxPacket) != coreconstants.PacketLength {
+	// 	return nil, rtt, fmt.Errorf("invalid Sphinx packet size: %v want size: %v", len(sphinxPacket), coreconstants.PacketLength)
+	// }
 	cmd := commands.SendPacket{
 		SphinxPacket: sphinxPacket,
 	}

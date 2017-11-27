@@ -321,6 +321,27 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 	return payload, nil
 }
 
+func TestForwardSphinxSize(t *testing.T) {
+	require := require.New(t)
+
+	mixPKI, _ := newMixPKI(require)
+	routeFactory := path_selection.New(mixPKI, sphinxconstants.NrHops)
+
+	senderProvider := "acme.com"
+	recipientProvider := "nsa.gov"
+	recipientName := "alice"
+	recipientID := [sphinxconstants.RecipientIDLength]byte{}
+	copy(recipientID[:], []byte(recipientName))
+	path, _, _, _, err := routeFactory.Build(senderProvider, recipientProvider, recipientID)
+	require.NoError(err, "path selection error")
+
+	payload := [coreconstants.ForwardPayloadLength]byte{}
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload[:])
+	require.NoError(err, "NewPacket failed")
+
+	require.Equal(len(pkt), coreconstants.PacketLength, "invalid packet size")
+}
+
 func TestSender(t *testing.T) {
 	require := require.New(t)
 

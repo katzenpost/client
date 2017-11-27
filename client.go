@@ -27,7 +27,6 @@ import (
 	nClient "github.com/katzenpost/authority/nonvoting/client"
 	"github.com/katzenpost/client/auth"
 	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/proxy"
@@ -38,6 +37,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/server"
 	"github.com/op/go-logging"
@@ -159,7 +159,7 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if err != nil {
 		return nil, err
 	}
-	c.routeFactory = path_selection.New(c.mixPKI, constants.HopsPerPath)
+	c.routeFactory = path_selection.New(c.mixPKI, constants.NrHops)
 
 	dbFile := fmt.Sprintf("%s/katzenpost_client.db", c.cfg.DataDir)
 	c.store, err = storage.New(dbFile)

@@ -33,9 +33,6 @@ const (
 	// when we access our local databases (for POP3&SMTP proxies).
 	DatabaseConnectTimeout = 3 * time.Second
 
-	// HopsPerPath is the number of mix hops per path through the mix network
-	HopsPerPath = 3
-
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
 
