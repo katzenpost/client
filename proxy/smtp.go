@@ -35,27 +35,6 @@ import (
 	"github.com/siebenmann/smtpd"
 )
 
-// logWriter is used to present the io.Reader interface
-// to our SMTP library for logging. this is only required
-// because of our SMTP library choice and isn't otherwise needed.
-type logWriter struct {
-	log *logging.Logger
-}
-
-// newLogWriter creates a new logWriter
-func newLogWriter(log *logging.Logger) *logWriter {
-	writer := logWriter{
-		log: log,
-	}
-	return &writer
-}
-
-// Write writes a message to the log
-func (w *logWriter) Write(p []byte) (int, error) {
-	w.log.Debug(string(p))
-	return len(p), nil
-}
-
 // isStringInList returns true if key is found in list
 func isStringInList(key string, list []string) bool {
 	k := strings.ToLower(key)
@@ -230,7 +209,6 @@ func (p *SMTPProxy) enqueueMessage(sender, receiver string, message []byte) erro
 // handleSMTPSubmission handles the SMTP submissions
 func (p *SMTPProxy) HandleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
-	//logWriter := newLogWriter(log)
 	logWriter := p.logBackend.GetLogWriter("SMTPProxy-SMTP", "DEBUG")
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
 	sender := ""
