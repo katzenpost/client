@@ -325,7 +325,7 @@ func TestForwardSphinxSize(t *testing.T) {
 	require := require.New(t)
 
 	mixPKI, _ := newMixPKI(require)
-	routeFactory := path_selection.New(mixPKI, sphinxconstants.NrHops)
+	routeFactory := path_selection.New(mixPKI, sphinxconstants.NrHops-2)
 
 	senderProvider := "acme.com"
 	recipientProvider := "nsa.gov"

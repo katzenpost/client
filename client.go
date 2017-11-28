@@ -159,7 +159,7 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if err != nil {
 		return nil, err
 	}
-	c.routeFactory = path_selection.New(c.mixPKI, constants.NrHops)
+	c.routeFactory = path_selection.New(c.mixPKI, constants.NrHops-2)
 
 	dbFile := fmt.Sprintf("%s/katzenpost_client.db", c.cfg.DataDir)
 	c.store, err = storage.New(dbFile)
