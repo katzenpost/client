@@ -189,9 +189,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	for i := range path {
 		currentDelay += delays[i]
 		path[i] = new(sphinx.PathHop)
-		hopDuration := DurationFromFloat(currentDelay)
-		hopEpoch := getFutureEpoch(hopDuration)
-		copy(path[i].ID[:], descriptors[i].MixKeys[hopEpoch].Bytes())
+		copy(path[i].ID[:], descriptors[i].IdentityKey.Bytes())
 		path[i].PublicKey = keys[i]
 		if i < r.numHops-1 {
 			// Non-terminal hop, add the delay.
