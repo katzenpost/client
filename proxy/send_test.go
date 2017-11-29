@@ -17,7 +17,6 @@
 package proxy
 
 import (
-	"context"
 	"errors"
 	"io/ioutil"
 	"net"
@@ -34,12 +33,11 @@ import (
 	"github.com/katzenpost/client/storage"
 	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
-	sphinxcommands "github.com/katzenpost/core/sphinx/commands"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
@@ -47,17 +45,16 @@ import (
 )
 
 type MixDescriptorSecrets struct {
-	linkPrivKey  *ecdh.PrivateKey
 	epochSecrets map[ecdh.PublicKey]*ecdh.PrivateKey
 }
 
 func createMixDescriptor(name string, layer uint8, addresses []string, startEpoch, endEpoch uint64) (*pki.MixDescriptor, *MixDescriptorSecrets, error) {
-	linkPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	mixKeys := make(map[uint64]*ecdh.PublicKey)
+	epochSecrets := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
+	identityPrivKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
-	mixKeys := make(map[uint64]*ecdh.PublicKey)
-	epochSecrets := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
 	for i := startEpoch; i < endEpoch+1; i++ {
 		mixPrivKey, err := ecdh.NewKeypair(rand.Reader)
 		if err != nil {
@@ -68,16 +65,15 @@ func createMixDescriptor(name string, layer uint8, addresses []string, startEpoc
 		epochSecrets[*pubKey] = mixPrivKey
 	}
 	secrets := MixDescriptorSecrets{
-		linkPrivKey:  linkPrivKey,
 		epochSecrets: epochSecrets,
 	}
 	descriptor := pki.MixDescriptor{
-		Name:       name,
-		LinkKey:    linkPrivKey.PublicKey(),
-		MixKeys:    mixKeys,
-		Addresses:  addresses,
-		Layer:      layer,
-		LoadWeight: 0,
+		Name:        name,
+		IdentityKey: identityPrivKey.PublicKey(),
+		MixKeys:     mixKeys,
+		Addresses:   addresses,
+		Layer:       layer,
+		LoadWeight:  0,
 	}
 	return &descriptor, &secrets, nil
 }
@@ -284,43 +280,6 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 	return pool, store, idKey, blockHandler
 }
 
-func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, senderProviderKey *ecdh.PrivateKey, recieverProviderKey *ecdh.PrivateKey, keysMap map[ecdh.PublicKey]*ecdh.PrivateKey, numHops int) ([]byte, error) {
-	var err error
-	payload := []byte{}
-	var routingInfo []sphinxcommands.RoutingCommand
-	var hopKey *ecdh.PrivateKey = senderProviderKey
-	for i := 0; i < numHops-1; i++ {
-		t.Log("Sphinx Unwrap")
-		payload, _, routingInfo, err = sphinx.Unwrap(hopKey, sphinxPacket)
-		require.NoError(err, "sphinx.Unwrap failure")
-		t.Logf("routingInfo len: %d", len(routingInfo))
-		for _, routingCommand := range routingInfo {
-			require.NotNil(routingCommand, "routing command is nil")
-			t.Logf("routing command: %v", routingCommand)
-			switch cmd := routingCommand.(type) {
-			case *sphinxcommands.NextNodeHop:
-				t.Log("NextNodeHop command")
-				pubKey := ecdh.PublicKey{}
-				err := pubKey.FromBytes(cmd.ID[:])
-				if err != nil {
-					return nil, err
-				}
-				hopKey = keysMap[pubKey]
-			case *sphinxcommands.NodeDelay:
-				t.Log("NodeDelay command")
-			case *sphinxcommands.SURBReply:
-				t.Log("SURB Reply command")
-			case *sphinxcommands.Recipient:
-				t.Log("Recipient command")
-			}
-		}
-	}
-	t.Log("final Sphinx Unwrap")
-	payload, _, _, err = sphinx.Unwrap(recieverProviderKey, sphinxPacket)
-	require.NoError(err, "sphinx.Unwrap failure")
-	return payload, nil
-}
-
 func TestForwardSphinxSize(t *testing.T) {
 	require := require.New(t)
 
@@ -340,110 +299,4 @@ func TestForwardSphinxSize(t *testing.T) {
 	require.NoError(err, "NewPacket failed")
 
 	require.Equal(len(pkt), coreconstants.PacketLength, "invalid packet size")
-}
-
-func TestSender(t *testing.T) {
-	require := require.New(t)
-
-	const (
-		hdrLength    = coreconstants.SphinxPlaintextHeaderLength + sphinx.SURBLength
-		flagsPadding = 0
-		flagsSURB    = 1
-		reserved     = 0
-	)
-
-	mixPKI, keysMap := newMixPKI(require)
-	nrHops := 5
-	routeFactory := path_selection.New(mixPKI, nrHops)
-
-	aliceEmail := "alice@acme.com"
-	alicePool, aliceStore, alicePrivKey, aliceBlockHandler := makeUser(require, aliceEmail)
-
-	bobEmail := "bob@nsa.gov"
-	bobPool, bobStore, bobPrivKey, bobBlockHandler := makeUser(require, bobEmail)
-
-	userPKI := MockUserPKI{
-		userMap: map[string]*ecdh.PublicKey{
-			aliceEmail: alicePrivKey.PublicKey(),
-			bobEmail:   bobPrivKey.PublicKey(),
-		},
-	}
-
-	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(err, "failed creating log backend")
-
-	aliceSender, err := NewSender(logBackend, "alice@acme.com", alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
-	require.NoError(err, "NewSender failure")
-
-	bobSender, err := NewSender(logBackend, "bob@nsa.gov", bobPool, bobStore, routeFactory, userPKI, bobBlockHandler)
-	require.NoError(err, "NewSender failure")
-
-	// Alice sends message to Bob
-	bobID := [sphinxconstants.RecipientIDLength]byte{}
-	copy(bobID[:], "bob")
-	toBobBlock := block.Block{
-		TotalBlocks: 1,
-		Block:       []byte("yo bobby, what up?"),
-	}
-	aliceEgressBlock := storage.EgressBlock{
-		Sender:            "alice@acme.com",
-		SenderProvider:    "acme.com",
-		Recipient:         "bob@nsa.gov",
-		RecipientProvider: "nsa.gov",
-		RecipientID:       bobID,
-		Block:             toBobBlock,
-	}
-	blockID, err := aliceStore.PutEgressBlock(&aliceEgressBlock)
-	rtt, err := aliceSender.Send(blockID, &aliceEgressBlock)
-	require.NoError(err, "Send failure")
-	t.Logf("Alice send rtt %d", rtt)
-
-	// decrypt Alice's captured sphinx packet
-	session := alicePool.Sessions["alice@acme.com"]
-	mockSession, ok := session.(*MockSession)
-	require.True(ok, "failed to get MockSession")
-	sendPacket, ok := mockSession.sentCommands[0].(*commands.SendPacket)
-	require.True(ok, "failed to get SendPacket command")
-
-	//aliceProviderKey := providerMap["acme.com"]
-	epoch, _, _ := epochtime.Now()
-	ctx := context.TODO() // XXX
-	doc, err := mixPKI.Get(ctx, epoch)
-	require.NoError(err, "pki Get failure")
-	descriptor, err := doc.GetProvider("acme.com")
-	require.NoError(err, "pki GetProvider error")
-	aliceProviderKey := keysMap[*descriptor.MixKeys[epoch]]
-
-	//bobProviderKey := providerMap["nsa.gov"]
-	descriptor, err = doc.GetProvider("nsa.gov")
-	require.NoError(err, "pki GetProvider error")
-	bobProviderKey := keysMap[*descriptor.MixKeys[epoch]]
-
-	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
-	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
-	require.NoError(err, "handler decrypt sphinx layers failure")
-	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
-	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[hdrLength:])
-	require.NoError(err, "handler decrypt failure")
-	t.Logf("block: %s", string(b.Block))
-
-	// Bob sends message to Alice
-	aliceID := [sphinxconstants.RecipientIDLength]byte{}
-	copy(aliceID[:], "alice")
-	toAliceBlock := block.Block{
-		TotalBlocks: 1,
-		Block:       []byte("Alice, I have the documents you requested."),
-	}
-	bobEgressBlock := storage.EgressBlock{
-		Sender:            "bob@nsa.gov",
-		SenderProvider:    "nsa.gov",
-		Recipient:         "alice@acme.com",
-		RecipientProvider: "acme.com",
-		RecipientID:       aliceID,
-		Block:             toAliceBlock,
-	}
-	blockID, err = bobStore.PutEgressBlock(&bobEgressBlock)
-	rtt, err = bobSender.Send(blockID, &bobEgressBlock)
-	require.NoError(err, "Send failure")
-	t.Logf("Bob send rtt %s", rtt)
 }
