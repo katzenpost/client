@@ -216,55 +216,61 @@ func (p *SMTPProxy) HandleSMTPSubmission(conn net.Conn) error {
 	for {
 		event := smtpConn.Next()
 		if event.What == smtpd.DONE || event.What == smtpd.ABORT {
+			p.log.Debug("SMTP session done.")
 			return nil
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
+			p.log.Debug("Mail from command")
 			senderAddr, err := mail.ParseAddress(event.Arg)
 			if err != nil {
-				p.log.Debug("sender address parse fail")
+				p.log.Error("sender address parse fail")
 				smtpConn.Reject()
 				return err
 			}
 			sender = senderAddr.Address
 			if _, err = p.accounts.GetIdentityKey(sender); err != nil {
-				p.log.Debug("client identity not found")
+				p.log.Error("client identity not found")
 				smtpConn.Reject()
 				return nil
 			}
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
+			p.log.Debug("Rcpt to command")
 			receiverAddr, err := mail.ParseAddress(strings.ToLower(event.Arg))
 			if err != nil {
-				p.log.Debug("recipient address parse fail")
+				p.log.Error("recipient address parse fail")
 				smtpConn.Reject()
 				return err
 			}
 			receiver = receiverAddr.Address
 			_, err = p.userPKI.GetKey(receiver)
 			if err != nil {
-				p.log.Debugf("user PKI: email %s not found", receiver)
+				p.log.Errorf("user PKI: email %s not found", receiver)
 				smtpConn.Reject()
 				return nil
 			}
 		}
 		if event.What == smtpd.GOTDATA {
+			p.log.Debug("Data command")
 			message, err := parseMessage(event.Arg)
 			if err != nil {
 				return err
 			}
 			id := message.Header.Get("X-Panoramix-Sender-Identity-Key")
 			if len(id) != 0 {
-				p.log.Debug("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
+				p.log.Error("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
 				smtpConn.Reject()
 				return nil
 			}
 			header := getWhiteListedFields(&message.Header, p.whitelist)
 			messageString, err := stringFromHeaderBody(*header, message.Body)
 			if err != nil {
+				p.log.Errorf("stringFromHeaderBody failure: %s", err)
 				return err
 			}
 			err = p.enqueueMessage(sender, receiver, []byte(messageString))
 			if err != nil {
+				p.log.Errorf("enqueueMessage failure: %s", err)
 				return err
 			}
 			return nil
