@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/client/storage"
 	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
@@ -46,43 +47,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type MixDescriptorSecrets struct {
-	linkPrivKey  *ecdh.PrivateKey
-	epochSecrets map[ecdh.PublicKey]*ecdh.PrivateKey
-}
-
-func createMixDescriptor(name string, layer uint8, addresses []string, startEpoch, endEpoch uint64) (*pki.MixDescriptor, *MixDescriptorSecrets, error) {
-	linkPrivKey, err := ecdh.NewKeypair(rand.Reader)
+func createMixDescriptor(name string, layer uint8, addresses []string, startEpoch, endEpoch uint64) (*pki.MixDescriptor, *map[uint64]*ecdh.PrivateKey, error) {
+	identityPrivKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 	mixKeys := make(map[uint64]*ecdh.PublicKey)
-	epochSecrets := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
+	epochSecrets := make(map[uint64]*ecdh.PrivateKey)
 	for i := startEpoch; i < endEpoch+1; i++ {
 		mixPrivKey, err := ecdh.NewKeypair(rand.Reader)
 		if err != nil {
 			return nil, nil, err
 		}
 		mixKeys[i] = mixPrivKey.PublicKey()
-		pubKey := mixPrivKey.PublicKey()
-		epochSecrets[*pubKey] = mixPrivKey
-	}
-	secrets := MixDescriptorSecrets{
-		linkPrivKey:  linkPrivKey,
-		epochSecrets: epochSecrets,
+		epochSecrets[i] = mixPrivKey
 	}
 	descriptor := pki.MixDescriptor{
-		Name:       name,
-		LinkKey:    linkPrivKey.PublicKey(),
-		MixKeys:    mixKeys,
-		Addresses:  addresses,
-		Layer:      layer,
-		LoadWeight: 0,
+		Name:        name,
+		IdentityKey: identityPrivKey.PublicKey(),
+		MixKeys:     mixKeys,
+		Addresses:   addresses,
+		Layer:       layer,
+		LoadWeight:  0,
 	}
-	return &descriptor, &secrets, nil
+	return &descriptor, &epochSecrets, nil
 }
 
-func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecdh.PrivateKey) {
+func newMixPKI(require *require.Assertions) (pki.Client, map[[32]byte]map[uint64]*ecdh.PrivateKey) {
 	type testDesc struct {
 		Name  string
 		Layer int
@@ -157,28 +148,24 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecd
 	}
 
 	layerMax := uint8(3)
-	keysMap := make(map[ecdh.PublicKey]*ecdh.PrivateKey)
+	keysMap := make(map[[32]byte]map[uint64]*ecdh.PrivateKey)
 	staticPKI := mix_pki.NewStaticPKI()
 	startEpoch, _, _ := epochtime.Now()
 	providers := []*pki.MixDescriptor{}
 	mixes := []*pki.MixDescriptor{}
 	for _, provider := range test_providers {
-		mockAddr := []string{} // XXX fix me?
-		descriptor, descriptorSecrets, err := createMixDescriptor(provider.Name, uint8(provider.Layer), mockAddr, startEpoch, startEpoch+3)
+		mockAddr := []string{}
+		descriptor, epochSecrets, err := createMixDescriptor(provider.Name, uint8(provider.Layer), mockAddr, startEpoch, startEpoch+3)
 		require.NoError(err, "createMixDescriptor errored")
 		providers = append(providers, descriptor)
-		for pubKey, privKey := range descriptorSecrets.epochSecrets {
-			keysMap[pubKey] = privKey
-		}
+		keysMap[descriptor.IdentityKey.ByteArray()] = *epochSecrets
 	}
 	for _, mix := range test_mixes {
-		mockAddr := []string{} // XXX fix me?
-		descriptor, descriptorSecrets, err := createMixDescriptor(mix.Name, uint8(mix.Layer), mockAddr, startEpoch, startEpoch+3)
+		mockAddr := []string{}
+		descriptor, epochSecrets, err := createMixDescriptor(mix.Name, uint8(mix.Layer), mockAddr, startEpoch, startEpoch+3)
 		require.NoError(err, "createMixDescriptor errored")
 		mixes = append(mixes, descriptor)
-		for pubKey, privKey := range descriptorSecrets.epochSecrets {
-			keysMap[pubKey] = privKey
-		}
+		keysMap[descriptor.IdentityKey.ByteArray()] = *epochSecrets
 	}
 
 	// for each epoch create a PKI Document and index it by epoch
@@ -284,13 +271,13 @@ func makeUser(require *require.Assertions, identity string) (*session_pool.Sessi
 	return pool, store, idKey, blockHandler
 }
 
-func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, senderProviderKey *ecdh.PrivateKey, recieverProviderKey *ecdh.PrivateKey, keysMap map[ecdh.PublicKey]*ecdh.PrivateKey, numHops int) ([]byte, error) {
+func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket []byte, senderProviderKey *ecdh.PrivateKey, recieverProviderKey *ecdh.PrivateKey, keysMap map[[32]byte]map[uint64]*ecdh.PrivateKey, numHops int, epoch uint64) ([]byte, error) {
 	var err error
 	payload := []byte{}
 	var routingInfo []sphinxcommands.RoutingCommand
 	var hopKey *ecdh.PrivateKey = senderProviderKey
 	for i := 0; i < numHops-1; i++ {
-		t.Log("Sphinx Unwrap")
+		t.Logf("Sphinx Unwrap with hopKey len %d", len(hopKey.Bytes()))
 		payload, _, routingInfo, err = sphinx.Unwrap(hopKey, sphinxPacket)
 		require.NoError(err, "sphinx.Unwrap failure")
 		t.Logf("routingInfo len: %d", len(routingInfo))
@@ -300,12 +287,7 @@ func decryptSphinxLayers(t *testing.T, require *require.Assertions, sphinxPacket
 			switch cmd := routingCommand.(type) {
 			case *sphinxcommands.NextNodeHop:
 				t.Log("NextNodeHop command")
-				pubKey := ecdh.PublicKey{}
-				err := pubKey.FromBytes(cmd.ID[:])
-				if err != nil {
-					return nil, err
-				}
-				hopKey = keysMap[pubKey]
+				hopKey = keysMap[cmd.ID][epoch]
 			case *sphinxcommands.NodeDelay:
 				t.Log("NodeDelay command")
 			case *sphinxcommands.SURBReply:
@@ -412,15 +394,15 @@ func TestSender(t *testing.T) {
 	require.NoError(err, "pki Get failure")
 	descriptor, err := doc.GetProvider("acme.com")
 	require.NoError(err, "pki GetProvider error")
-	aliceProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+	aliceProviderKey := keysMap[descriptor.IdentityKey.ByteArray()][epoch]
 
 	//bobProviderKey := providerMap["nsa.gov"]
 	descriptor, err = doc.GetProvider("nsa.gov")
 	require.NoError(err, "pki GetProvider error")
-	bobProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+	bobProviderKey := keysMap[descriptor.IdentityKey.ByteArray()][epoch]
 
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
-	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
+	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops, epoch)
 	require.NoError(err, "handler decrypt sphinx layers failure")
 	//bobSurb := bobsCiphertext[:556] // used for reply SURB ACK
 	b, _, err := bobBlockHandler.Decrypt(bobsCiphertext[hdrLength:])

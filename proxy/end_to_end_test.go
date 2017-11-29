@@ -155,14 +155,14 @@ func TestEndToEndProxy(t *testing.T) {
 
 	descriptor, err := doc.GetProvider("acme.com")
 	require.NoError(err, "pki GetProvider error")
-	aliceProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+	aliceProviderKey := keysMap[descriptor.IdentityKey.ByteArray()][epoch]
 
 	descriptor, err = doc.GetProvider("nsa.gov")
 	require.NoError(err, "pki GetProvider error")
-	bobProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+	bobProviderKey := keysMap[descriptor.IdentityKey.ByteArray()][epoch]
 
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
-	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
+	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops, epoch)
 	require.NoError(err, "decrypt sphinx layers failure")
 	require.Equal(len(bobsCiphertext), coreconstants.ForwardPayloadLength, "ciphertext len mismatch")
 	blockCiphertext := bobsCiphertext[hdrLength:]
