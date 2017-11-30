@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/require"
@@ -65,17 +66,17 @@ func TestEndToEndProxy(t *testing.T) {
 	mixPKI, keysMap := newMixPKI(require)
 
 	nrHops := 5
-	lambda := float64(.123)
-	routeFactory := path_selection.New(mixPKI, nrHops, lambda)
-
-	aliceSender, err := NewSender(aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
+	routeFactory := path_selection.New(mixPKI, nrHops)
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err, "failed creating log backend")
+	aliceSender, err := NewSender(logBackend, aliceEmail, alicePool, aliceStore, routeFactory, userPKI, aliceBlockHandler)
 	require.NoError(err, "NewSender failure")
 	senders := map[string]*Sender{
 		aliceEmail: aliceSender,
 	}
-	sendScheduler := NewSendScheduler(senders)
+	sendScheduler := NewSendScheduler(logBackend, senders)
 
-	submitProxy := NewSmtpProxy(&accounts, rand.Reader, userPKI, aliceStore, alicePool, routeFactory, sendScheduler)
+	submitProxy := NewSmtpProxy(logBackend, &accounts, rand.Reader, userPKI, aliceStore, routeFactory, sendScheduler)
 	aliceServerConn, aliceClientConn := net.Pipe()
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -154,14 +155,14 @@ func TestEndToEndProxy(t *testing.T) {
 
 	descriptor, err := doc.GetProvider("acme.com")
 	require.NoError(err, "pki GetProvider error")
-	aliceProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+	aliceProviderKey := keysMap[descriptor.IdentityKey.ByteArray()][epoch]
 
 	descriptor, err = doc.GetProvider("nsa.gov")
 	require.NoError(err, "pki GetProvider error")
-	bobProviderKey := keysMap[*descriptor.MixKeys[epoch]]
+	bobProviderKey := keysMap[descriptor.IdentityKey.ByteArray()][epoch]
 
 	t.Logf("ALICE Provider Key: %x", aliceProviderKey.Bytes())
-	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops)
+	bobsCiphertext, err := decryptSphinxLayers(t, require, sendPacket.SphinxPacket, aliceProviderKey, bobProviderKey, keysMap, nrHops, epoch)
 	require.NoError(err, "decrypt sphinx layers failure")
 	require.Equal(len(bobsCiphertext), coreconstants.ForwardPayloadLength, "ciphertext len mismatch")
 	blockCiphertext := bobsCiphertext[hdrLength:]
@@ -171,6 +172,7 @@ func TestEndToEndProxy(t *testing.T) {
 
 	bobStore.CreateAccountBuckets([]string{bobEmail})
 	bobFetcher := Fetcher{
+		log:      logBackend.GetLogger("bob_fetcher"),
 		Identity: bobEmail,
 		pool:     bobPool,
 		store:    bobStore,
@@ -185,11 +187,10 @@ func TestEndToEndProxy(t *testing.T) {
 		Sequence:      0,
 		Payload:       bobsCiphertext[hdrLength:],
 	}
-	mockBobSession.recvCommands = append(mockBobSession.recvCommands, msgCmd)
+	mockBobSession.recvCommands = append(mockBobSession.recvCommands, &msgCmd)
 
 	queueHintSize, err := bobFetcher.Fetch()
 	require.NoError(err, "Fetch failure")
-
 	t.Logf("queueHintSize %d", queueHintSize)
 
 	pop3Service := NewPop3Service(bobStore)

@@ -27,36 +27,13 @@ import (
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/path_selection"
-	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/client/user_pki"
+	"github.com/katzenpost/core/log"
 	sphinxconstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/op/go-logging"
 	"github.com/siebenmann/smtpd"
 )
-
-var log = logging.MustGetLogger("mixclient")
-
-// logWriter is used to present the io.Reader interface
-// to our SMTP library for logging. this is only required
-// because of our SMTP library choice and isn't otherwise needed.
-type logWriter struct {
-	log *logging.Logger
-}
-
-// newLogWriter creates a new logWriter
-func newLogWriter(log *logging.Logger) *logWriter {
-	writer := logWriter{
-		log: log,
-	}
-	return &writer
-}
-
-// Write writes a message to the log
-func (w *logWriter) Write(p []byte) (int, error) {
-	w.log.Debug(string(p))
-	return len(p), nil
-}
 
 // isStringInList returns true if key is found in list
 func isStringInList(key string, list []string) bool {
@@ -141,10 +118,12 @@ func stringFromHeaderBody(header mail.Header, body io.Reader) (string, error) {
 	return buf.String(), nil
 }
 
-// SubmitProxy handles SMTP mail submissions. This means we act as an SMTP
+// SMTPProxy handles SMTP mail submissions. This means we act as an SMTP
 // daemon, accepting e-mail messages and proxying them to the mix network
 // via the Providers.
-type SubmitProxy struct {
+type SMTPProxy struct {
+	log        *logging.Logger
+	logBackend *log.Backend
 
 	// accounts is a mapping of emails to private keys
 	accounts *config.AccountsMap
@@ -160,9 +139,6 @@ type SubmitProxy struct {
 	// store is used to persist messages to disk
 	store *storage.Store
 
-	// session pool of connections to each provider
-	sessionPool *session_pool.SessionPool
-
 	// routeFactory is used to create mixnet routes
 	routeFactory *path_selection.RouteFactory
 
@@ -172,14 +148,15 @@ type SubmitProxy struct {
 	scheduler *SendScheduler
 }
 
-// NewSmtpProxy creates a new SubmitProxy struct
-func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, pool *session_pool.SessionPool, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SubmitProxy {
-	submissionProxy := SubmitProxy{
+// NewSmtpProxy creates a new SMTPProxy struct
+func NewSmtpProxy(logBackend *log.Backend, accounts *config.AccountsMap, randomReader io.Reader, userPki user_pki.UserPKI, store *storage.Store, routeFactory *path_selection.RouteFactory, scheduler *SendScheduler) *SMTPProxy {
+	submissionProxy := SMTPProxy{
+		log:          logBackend.GetLogger("SMTPProxy"),
+		logBackend:   logBackend,
 		accounts:     accounts,
 		randomReader: randomReader,
 		userPKI:      userPki,
 		store:        store,
-		sessionPool:  pool,
 		routeFactory: routeFactory,
 		scheduler:    scheduler,
 		whitelist: []string{ // XXX yawning fix me
@@ -195,7 +172,7 @@ func NewSmtpProxy(accounts *config.AccountsMap, randomReader io.Reader, userPki 
 
 // enqueueMessage enqueues the message in our persistent message store
 // so that it can soon be sent on it's way to the recipient.
-func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) error {
+func (p *SMTPProxy) enqueueMessage(sender, receiver string, message []byte) error {
 	blocks, err := fragmentMessage(p.randomReader, message)
 	if err != nil {
 		return err
@@ -230,64 +207,70 @@ func (p *SubmitProxy) enqueueMessage(sender, receiver string, message []byte) er
 }
 
 // handleSMTPSubmission handles the SMTP submissions
-func (p *SubmitProxy) HandleSMTPSubmission(conn net.Conn) error {
+func (p *SMTPProxy) HandleSMTPSubmission(conn net.Conn) error {
 	cfg := smtpd.Config{} // XXX
-	logWriter := newLogWriter(log)
+	logWriter := p.logBackend.GetLogWriter("SMTPProxy-SMTP", "DEBUG")
 	smtpConn := smtpd.NewConn(conn, cfg, logWriter)
 	sender := ""
 	receiver := ""
 	for {
 		event := smtpConn.Next()
 		if event.What == smtpd.DONE || event.What == smtpd.ABORT {
+			p.log.Debug("SMTP session done.")
 			return nil
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.MAILFROM {
+			p.log.Debug("Mail from command")
 			senderAddr, err := mail.ParseAddress(event.Arg)
 			if err != nil {
-				log.Debug("sender address parse fail")
+				p.log.Error("sender address parse fail")
 				smtpConn.Reject()
 				return err
 			}
 			sender = senderAddr.Address
 			if _, err = p.accounts.GetIdentityKey(sender); err != nil {
-				log.Debug("client identity not found")
+				p.log.Error("client identity not found")
 				smtpConn.Reject()
 				return nil
 			}
 		}
 		if event.What == smtpd.COMMAND && event.Cmd == smtpd.RCPTTO {
+			p.log.Debug("Rcpt to command")
 			receiverAddr, err := mail.ParseAddress(strings.ToLower(event.Arg))
 			if err != nil {
-				log.Debug("recipient address parse fail")
+				p.log.Error("recipient address parse fail")
 				smtpConn.Reject()
 				return err
 			}
 			receiver = receiverAddr.Address
 			_, err = p.userPKI.GetKey(receiver)
 			if err != nil {
-				log.Debugf("user PKI: email %s not found", receiver)
+				p.log.Errorf("user PKI: email %s not found", receiver)
 				smtpConn.Reject()
 				return nil
 			}
 		}
 		if event.What == smtpd.GOTDATA {
+			p.log.Debug("Data command")
 			message, err := parseMessage(event.Arg)
 			if err != nil {
 				return err
 			}
 			id := message.Header.Get("X-Panoramix-Sender-Identity-Key")
 			if len(id) != 0 {
-				log.Debug("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
+				p.log.Error("Bad message received. Found X-Panoramix-Sender-Identity-Key in header.")
 				smtpConn.Reject()
 				return nil
 			}
 			header := getWhiteListedFields(&message.Header, p.whitelist)
 			messageString, err := stringFromHeaderBody(*header, message.Body)
 			if err != nil {
+				p.log.Errorf("stringFromHeaderBody failure: %s", err)
 				return err
 			}
 			err = p.enqueueMessage(sender, receiver, []byte(messageString))
 			if err != nil {
+				p.log.Errorf("enqueueMessage failure: %s", err)
 				return err
 			}
 			return nil

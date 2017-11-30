@@ -18,29 +18,57 @@
 package auth
 
 import (
-	"crypto/subtle"
+	"context"
 
-	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
+	"github.com/op/go-logging"
 )
 
 // ProviderAuthenticator implements the PeerAuthenticator interface
 // which is used to authenticate remote peers (in this case a provider)
 // based on the authenticated key exchange
 // as specified in core/wire/session.go
-type ProviderAuthenticator map[[255]byte]*ecdh.PublicKey
+type ProviderAuthenticator struct {
+	mixPKI pki.Client
+	log    *logging.Logger
+}
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a ProviderAuthenticator) IsPeerValid(peer *wire.PeerCredentials) bool {
-	nameField := [255]byte{}
-	copy(nameField[:], peer.AdditionalData)
-	_, ok := a[nameField]
-	if !ok {
+	if len(peer.AdditionalData) != constants.NodeIDLength {
+		a.log.Debugf("'%x' AD not an IdentityKey?.", peer.AdditionalData)
 		return false
 	}
-	if subtle.ConstantTimeCompare(a[nameField].Bytes(), peer.PublicKey.Bytes()) != 1 {
+
+	ctx := context.TODO() // XXX set a deadline
+	epoch, _, _ := epochtime.Now()
+	doc, err := a.mixPKI.Get(ctx, epoch)
+	if err != nil {
+		a.log.Errorf("Failed to retreive PKI document: %v", err)
 		return false
 	}
-	return true
+
+	desc, err := doc.GetProviderByKey(peer.AdditionalData[:])
+	if err == nil {
+		if peer.PublicKey.Equal(desc.LinkKey) {
+			a.log.Debugf("authenticated connection to %s", desc.Name)
+			return true
+		}
+	}
+	a.log.Errorf("Failed to authenticate connection to %s", desc.Name)
+	return false
+}
+
+// New returns a new ProviderAuthenticator
+func New(logBackend *log.Backend, mixPKI pki.Client) *ProviderAuthenticator {
+	a := ProviderAuthenticator{
+		mixPKI: mixPKI,
+		log:    logBackend.GetLogger("Client_ProviderAuthenticator"),
+	}
+	return &a
 }

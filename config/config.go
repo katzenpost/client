@@ -1,5 +1,5 @@
 // config.go - mixnet client configuration
-// Copyright (C) 2017  David Anthony Stainton
+// Copyright (C) 2017  David Anthony Stainton, Yawning Angel
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,22 +18,31 @@
 package config
 
 import (
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/vault"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/op/go-logging"
+	"github.com/katzenpost/core/utils"
 	"github.com/pelletier/go-toml"
 )
 
-var log = logging.MustGetLogger("mixclient")
+const (
+	defaultLogLevel = "NOTICE"
+)
+
+var defaultLogging = Logging{
+	Disable: false,
+	File:    "",
+	Level:   defaultLogLevel,
+}
 
 // Account is used to deserialize the account sections
 // of the configuration file.
@@ -46,15 +55,6 @@ type Account struct {
 	Provider string
 }
 
-// ProviderPinning is used to deserialize the
-// provider pinning sections of the configuration file
-type ProviderPinning struct {
-	// PublicKeyFile is the file path of the key file
-	PublicKeyFile string
-	// Name is the name of the Provider
-	Name string
-}
-
 // Proxy is used to deserialize the proxy
 // configuration sections of the configuration
 // for the SMTP and POP3 proxies.
@@ -65,16 +65,87 @@ type Proxy struct {
 	Address string
 }
 
+// Logging is the Katzenpost client logging configuration.
+type Logging struct {
+	// Disable disables logging entirely.
+	Disable bool
+
+	// File specifies the log file, if omitted stdout will be used.
+	File string
+
+	// Level specifies the log level.
+	Level string
+}
+
+func (lCfg *Logging) validate() error {
+	lvl := strings.ToUpper(lCfg.Level)
+	switch lvl {
+	case "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG":
+	case "":
+		lCfg.Level = defaultLogLevel
+	default:
+		return fmt.Errorf("config: Logging: Level '%v' is invalid", lCfg.Level)
+	}
+	lCfg.Level = lvl // Force uppercase.
+	return nil
+}
+
+// Nonvoting is a non-voting directory authority.
+type Nonvoting struct {
+	// Address is the authority's IP/port combination.
+	Address string
+
+	// PublicKey is the authority's public key in Base64 or Base16 format.
+	PublicKey string
+}
+
+func (nCfg Nonvoting) validate() error {
+	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+	}
+
+	var pubKey eddsa.PublicKey
+	if err := pubKey.FromString(nCfg.PublicKey); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
+	}
+
+	return nil
+}
+
+// PKI is the Katzenpost directory authority configuration.
+type PKI struct {
+	// Nonvoting is a non-voting directory authority.
+	Nonvoting *Nonvoting
+}
+
+func (pCfg *PKI) validate() error {
+	nrCfg := 0
+	if pCfg.Nonvoting != nil {
+		if err := pCfg.Nonvoting.validate(); err != nil {
+			return err
+		}
+		nrCfg++
+	}
+	if nrCfg != 1 {
+		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
+	}
+	return nil
+}
+
 // Config is used to deserialize the configuration file
 type Config struct {
+	// DataDir is the absolute path to the client's state files.
+	DataDir string
+	// Logging controls logging parameters
+	Logging *Logging
 	// Account is the list of accounts represented by this client configuration
 	Account []Account
-	// ProviderPinning is an optional list of pinned Provider public keys
-	ProviderPinning []ProviderPinning
+	// PKI configures the PKI
+	PKI *PKI
 	// SMTPProxy is the transport configuration of the SMTP submission proxy
-	SMTPProxy Proxy
+	SMTPProxy *Proxy
 	// POP3Proxy is the transport configuration of the POP3 receive proxy
-	POP3Proxy Proxy
+	POP3Proxy *Proxy
 }
 
 // AccountsMap map of email to user private key
@@ -106,7 +177,8 @@ func (a *AccountsMap) GetIdentityKey(email string) (*ecdh.PrivateKey, error) {
 //   * constants.KeyStatusPrivate
 //   * constants.KeyStatusPublic
 func CreateKeyFileName(keysDir, keyType, name, provider, keyStatus string) string {
-	return fmt.Sprintf("%s/%s_%s@%s.%s.pem", keysDir, keyType, name, provider, keyStatus)
+	pemFile := fmt.Sprintf("%s_%s@%s.%s.pem", keyType, name, provider, keyStatus)
+	return filepath.Join(keysDir, pemFile)
 }
 
 // GetAccountKey decrypts and returns a private key material or an error
@@ -116,11 +188,10 @@ func CreateKeyFileName(keysDir, keyType, name, provider, keyStatus string) strin
 //   * constants.EndToEndKeyType
 //   * constants.LinkLayerKeyType
 // * account - an instance of the Account struct
-// * keysDir - a filepath to the directory containing the key files.
 //   must not end in a forward slash /.
 // * passphrase - a secret passphrase which is used to decrypt keys on disk
-func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphrase string) (*ecdh.PrivateKey, error) {
-	privateKeyFile := CreateKeyFileName(keysDir, keyType, account.Name, account.Provider, constants.KeyStatusPrivate)
+func (c *Config) GetAccountKey(keyType string, account Account, passphrase string) (*ecdh.PrivateKey, error) {
+	privateKeyFile := CreateKeyFileName(c.DataDir, keyType, account.Name, account.Provider, constants.KeyStatusPrivate)
 	email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
 	v := vault.Vault{
 		Type:       constants.KeyStatusPrivate,
@@ -147,11 +218,11 @@ func (c *Config) GetAccountKey(keyType string, account Account, keysDir, passphr
 // * keysDir - a filepath to the directory containing the key files.
 //   must not end in a forward slash /.
 // * passphrase - a secret passphrase which is used to decrypt keys on disk
-func (c *Config) AccountsMap(keyType, keysDir, passphrase string) (*AccountsMap, error) {
+func (c *Config) AccountsMap(keyType, passphrase string) (*AccountsMap, error) {
 	accounts := make(AccountsMap)
 	for _, account := range c.Account {
 		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
-		privateKey, err := c.GetAccountKey(keyType, account, keysDir, passphrase)
+		privateKey, err := c.GetAccountKey(keyType, account, passphrase)
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +258,6 @@ func writeKey(keysDir, prefix, name, provider, passphrase string) error {
 			Passphrase: passphrase,
 			Path:       privateKeyFile,
 		}
-		log.Notice("performing key stretching computation")
 		err = v.Seal(privateKey.Bytes())
 		if err != nil {
 			return err
@@ -206,31 +276,18 @@ func SplitEmail(email string) (string, string, error) {
 	return fields[0], fields[1], nil
 }
 
-func FromFile(fileName string) (*Config, error) {
-	config := Config{}
-	fileData, err := ioutil.ReadFile(fileName)
-	if err != nil {
-		return nil, err
-	}
-	err = toml.Unmarshal([]byte(fileData), &config)
-	if err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
 // GenerateKeys creates the key files necessary to use the client
-func (c *Config) GenerateKeys(keysDir, passphrase string) error {
+func (c *Config) GenerateKeys(passphrase string) error {
 	var err error
 	for i := 0; i < len(c.Account); i++ {
 		name := c.Account[i].Name
 		provider := c.Account[i].Provider
 		if name != "" && provider != "" {
-			err = writeKey(keysDir, constants.LinkLayerKeyType, name, provider, passphrase)
+			err = writeKey(c.DataDir, constants.LinkLayerKeyType, name, provider, passphrase)
 			if err != nil {
 				return err
 			}
-			err = writeKey(keysDir, constants.EndToEndKeyType, name, provider, passphrase)
+			err = writeKey(c.DataDir, constants.EndToEndKeyType, name, provider, passphrase)
 			if err != nil {
 				return err
 			}
@@ -241,26 +298,50 @@ func (c *Config) GenerateKeys(keysDir, passphrase string) error {
 	return nil
 }
 
-// GetProviderPins returns a mapping of
-// identity string to public key
-func (c *Config) GetProviderPinnedKeys() (map[[255]byte]*ecdh.PublicKey, error) {
-	pinnings := c.ProviderPinning
-	keysMap := make(map[[255]byte]*ecdh.PublicKey)
-	for i := 0; i < len(pinnings); i++ {
-		name := pinnings[i].Name
-		pemPayload, err := ioutil.ReadFile(pinnings[i].PublicKeyFile)
-		if err != nil {
-			return nil, err
-		}
-		block, _ := pem.Decode(pemPayload)
-		if block == nil {
-			return nil, err
-		}
-		publicKey := new(ecdh.PublicKey)
-		publicKey.FromBytes(block.Bytes)
-		nameField := [255]byte{}
-		copy(nameField[:], name)
-		keysMap[nameField] = publicKey
+// FixupAndValidate applies defaults to config entries and validates the
+// supplied configuration.
+func (cfg *Config) FixupAndValidate() error {
+	if cfg.DataDir == "" {
+		return errors.New("config: No DataDir was present")
 	}
-	return keysMap, nil
+	if cfg.Account == nil {
+		return errors.New("config: No Account block was present")
+	}
+	if cfg.Logging == nil {
+		cfg.Logging = &defaultLogging
+	}
+	if cfg.PKI == nil {
+		return errors.New("config: No PKI block was present")
+	}
+	if err := cfg.PKI.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Logging.validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Load parses and validates the provided buffer b as a config file body and
+// returns the Config.
+func Load(b []byte) (*Config, error) {
+	cfg := new(Config)
+	if err := toml.Unmarshal(b, cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.FixupAndValidate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// LoadFile loads, parses and validates the provided file and returns the
+// Config.
+func LoadFile(f string) (*Config, error) {
+	b, err := ioutil.ReadFile(f)
+	if err != nil {
+		return nil, err
+	}
+	return Load(b)
 }
