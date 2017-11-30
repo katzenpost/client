@@ -17,6 +17,7 @@
 package scheduler
 
 import (
+	"sync"
 	"time"
 
 	"github.com/katzenpost/core/monotime"
@@ -25,6 +26,8 @@ import (
 
 // PriorityScheduler is a priority queue backed scheduler
 type PriorityScheduler struct {
+	sync.RWMutex
+
 	queue       *queue.PriorityQueue
 	taskHandler func(interface{})
 	timer       *time.Timer
@@ -40,23 +43,39 @@ func New(taskHandler func(interface{})) *PriorityScheduler {
 	return &s
 }
 
+// pop pops an item off the priority queue with a lock
+func (s *PriorityScheduler) pop() *queue.Entry {
+	s.Lock()
+	defer s.Unlock()
+	return s.queue.Pop()
+}
+
 // run causes the lowest priority task
 // to be processed before scheduling
 // the handling of the next scheduled task
 func (s *PriorityScheduler) run() {
-	entry := s.queue.Pop()
+	entry := s.pop()
 	s.taskHandler(entry.Value)
 	s.schedule()
+}
+
+// peek peeks into the priority queue with a read-lock
+func (s *PriorityScheduler) peek() *queue.Entry {
+	s.RLock()
+	defer s.RUnlock()
+	return s.queue.Peek()
 }
 
 // schedule schedules the handling of the lowest
 // priority item. Queue priority is compared to
 // current monotime.
 func (s *PriorityScheduler) schedule() {
-	entry := s.queue.Peek()
+	entry := s.peek()
 	if entry == nil {
 		return
 	}
+	s.Lock()
+	defer s.Unlock()
 	now := monotime.Now()
 	if time.Duration(entry.Priority) <= now {
 		s.timer = time.AfterFunc(time.Duration(0), s.run)
@@ -68,11 +87,19 @@ func (s *PriorityScheduler) schedule() {
 	}
 }
 
+// enqueue adds task to priority queue and uses mutex
+func (s *PriorityScheduler) enqueue(priority uint64, task interface{}) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.queue.Enqueue(uint64(priority), task)
+}
+
 // Add adds a task to the scheduler
 func (s *PriorityScheduler) Add(duration time.Duration, task interface{}) {
 	now := monotime.Now()
 	priority := now + duration
-	s.queue.Enqueue(uint64(priority), task)
+	s.enqueue(uint64(priority), task)
 	s.schedule()
 }
 
