@@ -35,7 +35,6 @@ import (
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire/commands"
-	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
@@ -148,7 +147,6 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 // SendScheduler is used to send messages and schedule the retransmission
 // if the ACK wasn't received in time
 type SendScheduler struct {
-	worker.Worker
 	sync.RWMutex
 
 	log          *logging.Logger
