@@ -109,8 +109,8 @@ func (c *Client) initLogging() error {
 
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
-	c.smtpServer.halt()
-	c.pop3Server.halt()
+	c.smtpServer.Shutdown()
+	c.pop3Server.Shutdown()
 	c.sendScheduler.Shutdown()
 	c.periodicRetriever.Shutdown()
 }

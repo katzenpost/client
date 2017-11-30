@@ -273,7 +273,6 @@ func (p *SMTPProxy) HandleSMTPSubmission(conn net.Conn) error {
 				p.log.Errorf("enqueueMessage failure: %s", err)
 				return err
 			}
-			return nil
 		}
 	}
 	return nil

@@ -18,33 +18,36 @@
 package client
 
 import (
-	"container/list"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
 const keepAliveInterval = 3 * time.Minute
 
 type listener struct {
+	worker.Worker
+
 	sync.WaitGroup
 	sync.Mutex
 
+	connectionCallback func(net.Conn) error
+
 	l   net.Listener
 	log *logging.Logger
-
-	connectionCallback func(net.Conn) error
-	conns              *list.List
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 }
 
-func (l *listener) halt() {
-	// Close the listener, wait for worker() to return.
+func (l *listener) Shutdown() {
+	l.log.Debug("Shutting down")
+	l.Halt()
+	// Close the listener, wait for acceptLoop() to return.
 	l.l.Close()
 	l.Wait()
 
@@ -53,7 +56,7 @@ func (l *listener) halt() {
 	l.closeAllWg.Wait()
 }
 
-func (l *listener) worker() {
+func (l *listener) acceptLoop() {
 	addr := l.l.Addr()
 	l.log.Noticef("Listening on: %v", addr)
 	defer func() {
@@ -77,7 +80,11 @@ func (l *listener) worker() {
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
-		go l.onNewConn(conn)
+		f := func() {
+			defer conn.Close()
+			l.onNewConn(conn)
+		}
+		l.Go(f)
 	}
 
 	// NOTREACHED
@@ -87,9 +94,8 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.closeAllWg.Add(1)
 	l.Lock()
 	defer l.Unlock()
-	l.conns.PushFront(conn)
 	if err := l.connectionCallback(conn); err != nil {
-		l.log.Error(err)
+		l.log.Errorf("connection callback failure: %s", err)
 	}
 	l.closeAllWg.Done()
 }
@@ -100,7 +106,6 @@ func newListener(addr string, connectionCallback func(net.Conn) error, logBacken
 	l := new(listener)
 	l.connectionCallback = connectionCallback
 	l.log = logBackend.GetLogger("listener")
-	l.conns = list.New()
 	l.closeAllCh = make(chan interface{})
 	l.Add(1)
 
@@ -109,6 +114,6 @@ func newListener(addr string, connectionCallback func(net.Conn) error, logBacken
 		return nil, err
 	}
 
-	go l.worker()
+	go l.acceptLoop()
 	return l, nil
 }
