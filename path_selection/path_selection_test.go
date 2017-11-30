@@ -108,36 +108,48 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[ecdh.PublicKey]*ecd
 	test_mixes := []testDesc{
 		{
 			Name:  "nsamix101",
-			Layer: 1,
+			Layer: 0,
 			IP:    "127.0.0.1",
 			Port:  11234,
 		},
 		{
 			Name:  "nsamix102",
-			Layer: 2,
+			Layer: 1,
 			IP:    "127.0.0.1",
 			Port:  112345,
 		},
 		{
 			Name:  "five_eyes",
-			Layer: 3,
+			Layer: 2,
 			IP:    "127.0.0.1",
 			Port:  11236,
 		},
 		{
 			Name:  "gchq123",
-			Layer: 1,
+			Layer: 0,
 			IP:    "127.0.0.1",
 			Port:  11237,
 		},
 		{
 			Name:  "fsbspy1",
-			Layer: 2,
+			Layer: 1,
+			IP:    "127.0.0.1",
+			Port:  11238,
+		},
+		{
+			Name:  "fsbspy3",
+			Layer: 3,
 			IP:    "127.0.0.1",
 			Port:  11238,
 		},
 		{
 			Name:  "foxtrot2",
+			Layer: 2,
+			IP:    "127.0.0.1",
+			Port:  11239,
+		},
+		{
+			Name:  "foxtrot3",
 			Layer: 3,
 			IP:    "127.0.0.1",
 			Port:  11239,
@@ -216,24 +228,4 @@ func TestPathSelection(t *testing.T) {
 	t.Logf("built a reply path %s", replyRoute)
 	t.Logf("rtt is %s", rtt)
 	t.Logf("surb ID %v", *surbID)
-}
-
-func TestGetRouteDescriptors(t *testing.T) {
-	require := require.New(t)
-
-	mixPKI, _ := newMixPKI(require)
-	nrHops := 5
-	factory := New(mixPKI, nrHops)
-
-	descriptors, err := factory.getRouteDescriptors("nsa.gov", "acme.com")
-	require.NoError(err, "getRouteDescriptor failure")
-	require.Equal(5, len(descriptors), "returned incorrect length")
-	require.Equal("nsa.gov", descriptors[0].Name, "first descriptor name does not match")
-	require.Equal("acme.com", descriptors[4].Name, "first descriptor name does not match")
-
-	t.Logf("descriptors %d", len(descriptors))
-	for _, descriptor := range descriptors {
-		require.NotNil(descriptor, "is nil; fail")
-		t.Logf("name: %s", descriptor.Name)
-	}
 }

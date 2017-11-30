@@ -122,7 +122,7 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	if err != nil {
 		return nil, err
 	}
-	for i := 1; i < r.numHops-1; i++ {
+	for i := 0; i < r.numHops-1; i++ {
 		layerMixes, err := consensus.GetMixesInLayer(uint8(i))
 		if err != nil {
 			return nil, err
