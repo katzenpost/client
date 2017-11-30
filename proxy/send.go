@@ -169,17 +169,15 @@ func NewSendScheduler(logBackend *log.Backend, senders map[string]*Sender) *Send
 }
 
 // Send sends the given block and adds a retransmit job to the scheduler
-func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) error {
+func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) {
 	s.log.Debug("Send")
 	rtt, err := s.senders[sender].Send(blockID, storageBlock)
 	if err != nil {
 		s.log.Debugf("Send failure: %s", err)
-		return err
 	}
 	// schedule a resend in the future
 	// (but it can be cancelled if we receive an ACK)
 	s.add(rtt, storageBlock)
-	return nil
 }
 
 // add adds a retransmit job to the scheduler
