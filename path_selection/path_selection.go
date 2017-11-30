@@ -91,7 +91,7 @@ type RouteFactory struct {
 // New creates a new RouteFactory for creating routes
 // arguments:
 // * pki - a client PKI interface
-// * numHops - number of total hops in the route including
+// * numHops - number of mix hops in the route including
 //   ingress and egress mixnet Providers.
 func New(pki pki.Client, numHops int) *RouteFactory {
 	r := RouteFactory{
@@ -118,12 +118,12 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	if err != nil {
 		return nil, err
 	}
-	descriptors[r.numHops-1], err = consensus.GetProvider(recipientProviderName)
+	descriptors[len(descriptors)-1], err = consensus.GetProvider(recipientProviderName)
 	if err != nil {
 		return nil, err
 	}
-	for i := 0; i < r.numHops-1; i++ {
-		layerMixes, err := consensus.GetMixesInLayer(uint8(i))
+	for i := 1; i < r.numHops-1; i++ {
+		layerMixes, err := consensus.GetMixesInLayer(uint8(i - 1))
 		if err != nil {
 			return nil, err
 		}
