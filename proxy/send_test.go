@@ -84,25 +84,25 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[[32]byte]map[uint64
 	test_providers := []testDesc{
 		{
 			Name:  "acme.com",
-			Layer: 0,
+			Layer: 255,
 			IP:    "127.0.0.1",
 			Port:  11240,
 		},
 		{
 			Name:  "nsa.gov",
-			Layer: 0,
+			Layer: 255,
 			IP:    "127.0.0.1",
 			Port:  11241,
 		},
 		{
 			Name:  "gchq.uk",
-			Layer: 0,
+			Layer: 255,
 			IP:    "127.0.0.1",
 			Port:  11242,
 		},
 		{
 			Name:  "fsb.ru",
-			Layer: 0,
+			Layer: 255,
 			IP:    "127.0.0.1",
 			Port:  11243,
 		},
@@ -111,37 +111,37 @@ func newMixPKI(require *require.Assertions) (pki.Client, map[[32]byte]map[uint64
 	test_mixes := []testDesc{
 		{
 			Name:  "nsamix101",
-			Layer: 1,
+			Layer: 0,
 			IP:    "127.0.0.1",
 			Port:  11234,
 		},
 		{
 			Name:  "nsamix102",
-			Layer: 2,
+			Layer: 1,
 			IP:    "127.0.0.1",
 			Port:  112345,
 		},
 		{
 			Name:  "five_eyes",
-			Layer: 3,
+			Layer: 2,
 			IP:    "127.0.0.1",
 			Port:  11236,
 		},
 		{
 			Name:  "gchq123",
-			Layer: 1,
+			Layer: 0,
 			IP:    "127.0.0.1",
 			Port:  11237,
 		},
 		{
 			Name:  "fsbspy1",
-			Layer: 2,
+			Layer: 1,
 			IP:    "127.0.0.1",
 			Port:  11238,
 		},
 		{
 			Name:  "foxtrot2",
-			Layer: 3,
+			Layer: 2,
 			IP:    "127.0.0.1",
 			Port:  11239,
 		},
