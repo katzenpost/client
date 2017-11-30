@@ -19,6 +19,7 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/client/constants"
@@ -34,6 +35,7 @@ import (
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
@@ -146,6 +148,9 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 // SendScheduler is used to send messages and schedule the retransmission
 // if the ACK wasn't received in time
 type SendScheduler struct {
+	worker.Worker
+	sync.RWMutex
+
 	log          *logging.Logger
 	sched        *scheduler.PriorityScheduler
 	senders      map[string]*Sender
@@ -183,20 +188,30 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.EgressBlock) {
 	s.log.Debugf("schedule a send in %v", rtt)
 	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
+	s.Lock()
+	defer s.Unlock()
+	s.cancellation[storageBlock.SURBID] = false
+}
+
+func (s *SendScheduler) isCancelled(id [sphinxConstants.SURBIDLength]byte) bool {
+	s.RLock()
+	defer s.RUnlock()
+	cancelled, ok := s.cancellation[id]
+	if ok && !cancelled {
+		return true
+	} else {
+		s.log.Error("cancellation map failure")
+	}
+	return false
 }
 
 // Cancel ensures that a given retransmit will not be executed
 func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 	s.log.Debug("Cancel")
-	_, ok := s.cancellation[id]
-	if ok {
-		if s.cancellation[id] {
-			s.log.Errorf("SendScheduler Cancellation with SURB ID %x already cancelled", id)
-		} else {
-			s.cancellation[id] = true
-		}
-	} else {
-		s.log.Error("SendScheduler Cancellation received an unknown SURB ID")
+	if !s.isCancelled(id) {
+		s.Lock()
+		defer s.Unlock()
+		s.cancellation[id] = true
 	}
 }
 
@@ -204,13 +219,13 @@ func (s *SendScheduler) Cancel(id [sphinxConstants.SURBIDLength]byte) {
 // a retransmit
 func (s *SendScheduler) handleSend(task interface{}) {
 	s.log.Debug("handleSend")
+
 	storageBlock, ok := task.(*storage.EgressBlock)
 	if !ok {
 		s.log.Error("SendScheduler got invalid task from priority scheduler.")
 		return
 	}
-	_, ok = s.cancellation[storageBlock.SURBID]
-	if !ok {
+	if !s.isCancelled(storageBlock.SURBID) {
 		rtt, err := s.senders[storageBlock.Sender].Send(&storageBlock.BlockID, storageBlock)
 		if err != nil {
 			s.log.Error(err)
