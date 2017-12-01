@@ -46,11 +46,15 @@ func DurationFromFloat(delay float64) time.Duration {
 // of the "Panoramix Mix Network End-to-end Protocol Specification"
 // the delay for the egress provider, the last hop is always zero,
 // see https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
-func getDelays(lambda float64, count int) []float64 {
+func getDelays(lambda float64, maxHopDelay uint64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
 	for i := 0; i < count-1; i++ {
-		delays[i] = rand.Exp(cryptRand, lambda)
+		delay := rand.Exp(cryptRand, lambda)
+		if delay > float64(maxHopDelay) {
+			delay = float64(maxHopDelay)
+		}
+		delays[i] = delay
 	}
 	return delays
 }
@@ -70,9 +74,6 @@ func getFutureEpoch(hopDuration time.Duration) uint64 {
 	if hopDuration < till {
 		return currentEpoch
 	}
-	// XXX apply floor or ceiling?
-	//fu := float64(currentEpoch) + (hopDuration-till).Nanoseconds()/epochtime.Period.Nanoseconds()
-
 	return currentEpoch + uint64((hopDuration-till).Nanoseconds())/uint64(epochtime.Period.Nanoseconds())
 }
 
@@ -85,21 +86,17 @@ func getFutureEpoch(hopDuration time.Duration) uint64 {
 type RouteFactory struct {
 	pki     pki.Client
 	numHops int
-	lambda  float64
 }
 
 // New creates a new RouteFactory for creating routes
 // arguments:
 // * pki - a client PKI interface
-// * numHops - number of total hops in the route including
+// * numHops - number of mix hops in the route including
 //   ingress and egress mixnet Providers.
-// * lambda - parameter to manipulate the exponential distribution
-//   that our per hop Poisson mix delays are sampled from.
-func New(pki pki.Client, numHops int, lambda float64) *RouteFactory {
+func New(pki pki.Client, numHops int) *RouteFactory {
 	r := RouteFactory{
 		pki:     pki,
 		numHops: numHops,
-		lambda:  lambda,
 	}
 	return &r
 }
@@ -121,12 +118,12 @@ func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProvider
 	if err != nil {
 		return nil, err
 	}
-	descriptors[r.numHops-1], err = consensus.GetProvider(recipientProviderName)
+	descriptors[len(descriptors)-1], err = consensus.GetProvider(recipientProviderName)
 	if err != nil {
 		return nil, err
 	}
 	for i := 1; i < r.numHops-1; i++ {
-		layerMixes, err := consensus.GetMixesInLayer(uint8(i))
+		layerMixes, err := consensus.GetMixesInLayer(uint8(i - 1))
 		if err != nil {
 			return nil, err
 		}
@@ -192,9 +189,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	for i := range path {
 		currentDelay += delays[i]
 		path[i] = new(sphinx.PathHop)
-		hopDuration := DurationFromFloat(currentDelay)
-		hopEpoch := getFutureEpoch(hopDuration)
-		copy(path[i].ID[:], descriptors[i].MixKeys[hopEpoch].Bytes())
+		copy(path[i].ID[:], descriptors[i].IdentityKey.Bytes())
 		path[i].PublicKey = keys[i]
 		if i < r.numHops-1 {
 			// Non-terminal hop, add the delay.
@@ -222,6 +217,18 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	return path, surbID, nil
 }
 
+// getLambdaAndMaxDelay returns the Poisson Lambda parameter AND
+// the max delay per hop or an error
+func (r *RouteFactory) getLambdaAndMaxDelay() (lambda float64, maxDelay uint64, err error) {
+	ctx := context.TODO() // XXX fix me
+	epoch, _, _ := epochtime.Now()
+	doc, err := r.pki.Get(ctx, epoch)
+	if err != nil {
+		return lambda, maxDelay, err
+	}
+	return doc.Lambda, doc.MaxDelay, err
+}
+
 // next returns a new forward path, reply path, SURB_ID and error.
 // This implements section 5.2 Path selection algorithm of the
 // Panoramix Mix Network End-to-end Protocol Specification
@@ -230,12 +237,19 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
 func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
+	var err error
 	var rtt, till time.Duration
 	var forwardDelays, replyDelays []float64
+
+	lambda, maxHopDelay, err := r.getLambdaAndMaxDelay()
+	if err != nil {
+		return nil, nil, nil, rtt, err
+	}
+
 	for {
 		// 1. Sample all forward and SURB delays.
-		forwardDelays = getDelays(r.lambda, r.numHops)
-		replyDelays = getDelays(r.lambda, r.numHops)
+		forwardDelays = getDelays(lambda, maxHopDelay, r.numHops)
+		replyDelays = getDelays(lambda, maxHopDelay, r.numHops)
 		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.
