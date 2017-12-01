@@ -62,7 +62,9 @@ func (s *PriorityScheduler) pop() *queue.Entry {
 func (s *PriorityScheduler) run() {
 	s.log.Debug("run")
 	entry := s.pop()
-	s.taskHandler(entry.Value)
+	if entry != nil {
+		s.taskHandler(entry.Value)
+	}
 	s.schedule()
 }
 
