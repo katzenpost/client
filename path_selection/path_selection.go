@@ -101,10 +101,44 @@ func New(pki pki.Client, numHops int) *RouteFactory {
 	return &r
 }
 
-// getRouteDescriptors returns a slice of mix descriptors,
+// getReplyRouteDescriptors returns a slice of mix descriptors,
 // one for each hop in the route where each mix descriptor
 // was selected from the set of descriptors for that layer
-func (r *RouteFactory) getRouteDescriptors(senderProviderName, recipientProviderName string) ([]*pki.MixDescriptor, error) {
+func (r *RouteFactory) getReplyRouteDescriptors(providerName string) ([]*pki.MixDescriptor, error) {
+	var err error
+	// number of mix hops plus one provider hops in total
+	descriptors := make([]*pki.MixDescriptor, r.numHops-1)
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO() // XXX fix me: use correct context for real pki source
+	consensus, err := r.pki.Get(ctx, epoch)
+	if err != nil {
+		return nil, err
+	}
+	descriptors[len(descriptors)-1], err = consensus.GetProvider(providerName)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < r.numHops-2; i++ {
+		layerMixes, err := consensus.GetMixesInLayer(uint8(i))
+		if err != nil {
+			return nil, err
+		}
+		if len(layerMixes) == 0 {
+			return nil, fmt.Errorf("Mixnet PKI client retrieved 0 descriptors from layer %d", i)
+		}
+		c, err := cryptorand.Int(rand.Reader, big.NewInt(int64(len(layerMixes))))
+		if err != nil {
+			return nil, err
+		}
+		descriptors[i] = layerMixes[c.Int64()]
+	}
+	return descriptors, nil
+}
+
+// getForwardRouteDescriptors returns a slice of mix descriptors,
+// one for each hop in the route where each mix descriptor
+// was selected from the set of descriptors for that layer
+func (r *RouteFactory) getForwardRouteDescriptors(senderProviderName, recipientProviderName string) ([]*pki.MixDescriptor, error) {
 	var err error
 	// number of mix hops plus two provider hops in total
 	descriptors := make([]*pki.MixDescriptor, r.numHops)
@@ -180,7 +214,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 	recipientID [constants.RecipientIDLength]byte,
 	isSURB bool) (path []*sphinx.PathHop, surbID *[constants.SURBIDLength]byte, err error) {
 
-	path = make([]*sphinx.PathHop, r.numHops)
+	path = make([]*sphinx.PathHop, len(delays))
 	keys, err := r.getHopEpochKeys(till, delays, descriptors)
 	if err != nil {
 		return nil, nil, err
@@ -191,7 +225,7 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 		path[i] = new(sphinx.PathHop)
 		copy(path[i].ID[:], descriptors[i].IdentityKey.Bytes())
 		path[i].PublicKey = keys[i]
-		if i < r.numHops-1 {
+		if i < len(descriptors)-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = uint32(delays[i])
@@ -251,7 +285,7 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 	for {
 		// 1. Sample all forward and SURB delays.
 		forwardDelays = getDelays(lambda, maxHopDelay, r.numHops)
-		replyDelays = getDelays(lambda, maxHopDelay, r.numHops)
+		replyDelays = getDelays(lambda, maxHopDelay, r.numHops-1)
 		// 2. Ensure total delays doesn't exceed (time_till next_epoch) +
 		//    2 * epoch_duration, as keys are only published 3 epochs in
 		//    advance.
@@ -264,11 +298,11 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 		}
 	}
 	// 3. Pick forward and SURB mixes (Section 5.2.1).
-	forwardDescriptors, err := r.getRouteDescriptors(senderProviderName, recipientProviderName)
+	forwardDescriptors, err := r.getForwardRouteDescriptors(senderProviderName, recipientProviderName)
 	if err != nil {
 		return nil, nil, nil, rtt, err
 	}
-	replyDescriptors, err := r.getRouteDescriptors(recipientProviderName, senderProviderName)
+	replyDescriptors, err := r.getReplyRouteDescriptors(senderProviderName)
 	if err != nil {
 		return nil, nil, nil, rtt, err
 	}
