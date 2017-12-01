@@ -312,9 +312,12 @@ func TestForwardSphinxSize(t *testing.T) {
 	senderProvider := "acme.com"
 	recipientProvider := "nsa.gov"
 	recipientName := "alice"
+	senderName := "bob"
 	recipientID := [sphinxconstants.RecipientIDLength]byte{}
 	copy(recipientID[:], []byte(recipientName))
-	path, _, _, _, err := routeFactory.Build(senderProvider, recipientProvider, recipientID)
+	senderID := [sphinxconstants.RecipientIDLength]byte{}
+	copy(senderID[:], []byte(senderName))
+	path, _, _, _, err := routeFactory.Build(senderProvider, recipientProvider, recipientID, senderID)
 	require.NoError(err, "path selection error")
 
 	payload := [coreconstants.ForwardPayloadLength]byte{}

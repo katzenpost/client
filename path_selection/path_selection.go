@@ -231,6 +231,9 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 			delay.Delay = uint32(delays[i])
 			path[i].Commands = []commands.RoutingCommand{delay}
 		} else {
+			// Terminal hop, add the recipient.
+			recipient := new(commands.Recipient)
+			copy(recipient.ID[:], recipientID[:])
 			if isSURB {
 				surbReply := new(commands.SURBReply)
 				surbID = &[constants.SURBIDLength]byte{}
@@ -239,11 +242,8 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 					return nil, nil, err
 				}
 				surbReply.ID = *surbID
-				path[i].Commands = []commands.RoutingCommand{surbReply}
+				path[i].Commands = []commands.RoutingCommand{recipient, surbReply}
 			} else {
-				// Terminal hop, add the recipient.
-				recipient := new(commands.Recipient)
-				copy(recipient.ID[:], recipientID[:])
 				delay := new(commands.NodeDelay)
 				delay.Delay = uint32(delays[i])
 				path[i].Commands = []commands.RoutingCommand{recipient, delay}
@@ -272,7 +272,7 @@ func (r *RouteFactory) getLambdaAndMaxDelay() (lambda float64, maxDelay uint64, 
 // The generated forward and reply paths are intended to be used
 // with the Poisson Stop and Wait ARQ, an end to end reliable transmission
 // protocol for mix networks using the Poisson mix strategy.
-func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
+func (r *RouteFactory) next(senderProviderName, recipientProviderName string, recipientID [constants.RecipientIDLength]byte, senderID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
 	var err error
 	var rtt, till time.Duration
 	var forwardDelays, replyDelays []float64
@@ -313,7 +313,7 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 	if err != nil {
 		return nil, nil, nil, rtt, err
 	}
-	replyPath, surbID, err := r.newPathVector(till, replyDelays, replyDescriptors, recipientID, true)
+	replyPath, surbID, err := r.newPathVector(till, replyDelays, replyDescriptors, senderID, true)
 	if err != nil {
 		return nil, nil, nil, rtt, err
 	}
@@ -325,7 +325,7 @@ func (r *RouteFactory) next(senderProviderName, recipientProviderName string, re
 // due to mix routing keys not being available for the
 // selected delays. We give up after four tries and return an error.
 func (r *RouteFactory) Build(senderProvider, recipientProvider string,
-	recipientID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
+	recipientID [constants.RecipientIDLength]byte, senderID [constants.RecipientIDLength]byte) ([]*sphinx.PathHop, []*sphinx.PathHop, *[constants.SURBIDLength]byte, time.Duration, error) {
 
 	var err error = nil
 	var forwardPath []*sphinx.PathHop
@@ -334,7 +334,7 @@ func (r *RouteFactory) Build(senderProvider, recipientProvider string,
 	var rtt time.Duration
 
 	for i := 0; i < 4; i++ {
-		forwardPath, replyPath, surbID, rtt, err = r.next(senderProvider, recipientProvider, recipientID)
+		forwardPath, replyPath, surbID, rtt, err = r.next(senderProvider, recipientProvider, recipientID, senderID)
 		if err == nil {
 			break
 		}

@@ -178,7 +178,7 @@ func (p *SMTPProxy) enqueueMessage(sender, receiver string, message []byte) erro
 		return err
 	}
 	for _, b := range blocks {
-		_, senderProvider, err := config.SplitEmail(sender)
+		senderUser, senderProvider, err := config.SplitEmail(sender)
 		if err != nil {
 			return err
 		}
@@ -188,11 +188,14 @@ func (p *SMTPProxy) enqueueMessage(sender, receiver string, message []byte) erro
 		}
 		recipientID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(recipientID[:], recipientUser)
+		senderID := [sphinxconstants.RecipientIDLength]byte{}
+		copy(senderID[:], senderUser)
 		storageBlock := storage.EgressBlock{
 			Sender:            sender,
 			SenderProvider:    senderProvider,
 			Recipient:         receiver,
 			RecipientID:       recipientID,
+			SenderID:          senderID,
 			RecipientProvider: recipientProvider,
 			SendAttempts:      uint8(0),
 			Block:             *b,

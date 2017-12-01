@@ -83,6 +83,10 @@ type EgressBlock struct {
 	// which is padded to fixed length
 	RecipientID [sphinxconstants.RecipientIDLength]byte
 
+	// SenderID is the user ID for a given sender
+	// which is padded to fixed length
+	SenderID [sphinxconstants.RecipientIDLength]byte
+
 	// SendAttempts is the number of attempts to retransmit
 	// a given message block
 	SendAttempts uint8
@@ -107,6 +111,7 @@ type jsonEgressBlock struct {
 	Recipient         string
 	RecipientProvider string
 	RecipientID       string
+	SenderID          string
 	SendAttempts      int
 	SURBKeys          string
 	SURBID            string
@@ -117,6 +122,10 @@ type jsonEgressBlock struct {
 // given the jsonEgressBlock receiver struct
 func (j *jsonEgressBlock) ToEgressBlock() (*EgressBlock, error) {
 	recipientID, err := base64.StdEncoding.DecodeString(j.RecipientID)
+	if err != nil {
+		return nil, err
+	}
+	senderID, err := base64.StdEncoding.DecodeString(j.SenderID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +155,7 @@ func (j *jsonEgressBlock) ToEgressBlock() (*EgressBlock, error) {
 	}
 	copy(s.BlockID[:], blockID)
 	copy(s.RecipientID[:], recipientID)
+	copy(s.SenderID[:], senderID)
 	copy(s.SURBKeys[:], surbKeys)
 	copy(s.SURBID[:], surbID)
 	return &s, nil
@@ -161,6 +171,7 @@ func (s *EgressBlock) ToJsonEgressBlock() *jsonEgressBlock {
 		Recipient:         s.Recipient,
 		RecipientProvider: s.RecipientProvider,
 		RecipientID:       base64.StdEncoding.EncodeToString(s.RecipientID[:]),
+		SenderID:          base64.StdEncoding.EncodeToString(s.SenderID[:]),
 		SendAttempts:      int(s.SendAttempts),
 		SURBKeys:          base64.StdEncoding.EncodeToString(s.SURBKeys[:]),
 		SURBID:            base64.StdEncoding.EncodeToString(s.SURBID[:]),
