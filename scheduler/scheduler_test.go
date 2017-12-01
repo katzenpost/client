@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,7 +43,9 @@ func TestPrioritySchedulerBasics(t *testing.T) {
 		t.Logf("handler payload is %s\n", s)
 		counter += 1
 	}
-	s := New(handler)
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err, "failed creating log backend")
+	s := New(handler, logBackend, "test")
 
 	testPlatter := []TestTask{
 		{
