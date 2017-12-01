@@ -19,8 +19,6 @@ package session_pool
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net"
 	"sync"
 
@@ -29,76 +27,90 @@ import (
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
-	"github.com/op/go-logging"
 )
-
-var log = logging.MustGetLogger("mixclient")
 
 // SessionPool maps sender email string to sender identity
 // wire protocol session with the Provider
 type SessionPool struct {
-	Sessions map[string]wire.SessionInterface
-	Locks    map[string]*sync.Mutex
+	sync.Mutex
+
+	Sessions     map[string]wire.SessionInterface
+	SessionLocks map[string]*sync.Mutex
+
+	accountsKey           *config.AccountsMap
+	config                *config.Config
+	providerAuthenticator wire.PeerAuthenticator
+	mixPKI                pki.Client
 }
 
 // New creates a new SessionPool
-func New(accounts *config.AccountsMap, config *config.Config, providerAuthenticator wire.PeerAuthenticator, mixPKI pki.Client) (*SessionPool, error) {
+func New(accountsKey *config.AccountsMap, config *config.Config, providerAuthenticator wire.PeerAuthenticator, mixPKI pki.Client) (*SessionPool, error) {
 	s := SessionPool{
-		Sessions: make(map[string]wire.SessionInterface),
-	}
-	for _, acct := range config.Account {
-		email := fmt.Sprintf("%s@%s", acct.Name, acct.Provider)
-		privateKey, err := accounts.GetIdentityKey(email)
-		if err != nil {
-			return nil, err
-		}
-		sessionConfig := wire.SessionConfig{
-			Authenticator:     providerAuthenticator,
-			AdditionalData:    []byte(acct.Name),
-			AuthenticationKey: privateKey,
-			RandomReader:      rand.Reader,
-		}
-		session, err := wire.NewSession(&sessionConfig, true)
-		if err != nil {
-			return nil, err
-		}
-		epoch, _, _ := epochtime.Now()
-		ctx := context.TODO() // XXX
-		doc, err := mixPKI.Get(ctx, epoch)
-		if err != nil {
-			return nil, err
-		}
-		providerDesc, err := doc.GetProvider(acct.Provider)
-		if err != nil {
-			return nil, err
-		}
-		// XXX hard code "tcp" here?
-		network := providerDesc.Addresses[0]
-		address := providerDesc.Addresses[1]
-		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", network, address))
-		if err != nil {
-			return nil, err
-		}
-		err = session.Initialize(conn)
-		if err != nil {
-			return nil, err
-		}
-		s.Sessions[email] = session
+		Sessions:              make(map[string]wire.SessionInterface),
+		SessionLocks:          make(map[string]*sync.Mutex),
+		accountsKey:           accountsKey,
+		config:                config,
+		providerAuthenticator: providerAuthenticator,
+		mixPKI:                mixPKI,
 	}
 	return &s, nil
 }
 
-func (s *SessionPool) Add(identity string, session wire.SessionInterface) {
-	s.Sessions[identity] = session
-	s.Locks[identity] = &sync.Mutex{}
+func (s *SessionPool) Remove(identity string) {
+	delete(s.Sessions, identity)
+	delete(s.SessionLocks, identity)
 }
 
+// Get returns a session and a mutex or an error using a given identity
+// string which is of the form "alice@provider-123", resembling an email address
 func (s *SessionPool) Get(identity string) (wire.SessionInterface, *sync.Mutex, error) {
 	v, ok := s.Sessions[identity]
-	if !ok {
-		return nil, nil, errors.New("wire protocol session pool key not found")
+	if ok {
+		return v, s.SessionLocks[identity], nil
 	}
-	return v, s.Locks[identity], nil
+
+	privateKey, err := s.accountsKey.GetIdentityKey(identity)
+	if err != nil {
+		return nil, nil, err
+	}
+	name, provider, err := config.SplitEmail(identity)
+	if err != nil {
+		return nil, nil, err
+	}
+	sessionConfig := wire.SessionConfig{
+		Authenticator:     s.providerAuthenticator,
+		AdditionalData:    []byte(name),
+		AuthenticationKey: privateKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewSession(&sessionConfig, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	epoch, _, _ := epochtime.Now()
+	ctx := context.TODO() // XXX fix me
+	doc, err := s.mixPKI.Get(ctx, epoch)
+	if err != nil {
+		return nil, nil, err
+	}
+	providerDesc, err := doc.GetProvider(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	// XXX TODO: retry with other addresses if available
+	conn, err := net.Dial("tcp", providerDesc.Addresses[0])
+	if err != nil {
+		return nil, nil, err
+	}
+	err = session.Initialize(conn)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.Lock()
+	defer s.Unlock()
+	s.Sessions[identity] = session
+	s.SessionLocks[identity] = new(sync.Mutex)
+	return s.Sessions[identity], s.SessionLocks[identity], nil
 }
 
 func (s *SessionPool) Identities() []string {
