@@ -27,7 +27,7 @@ const (
 	// additional time we should wait around for the ACK to arrive before a retransmission.
 	// (XXX: fix me, we need to set this appropriately.
 	// Current value may be too conservative. )
-	RoundTripTimeSlop = 3 * time.Minute
+	RoundTripTimeSlop = 4 * time.Second
 
 	// DatabaseConnectTimeout is a duration used as the connect timeout
 	// when we access our local databases (for POP3&SMTP proxies).

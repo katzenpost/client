@@ -123,6 +123,7 @@ func (f *Fetcher) Fetch() (uint8, error) {
 // processAck is used by our Stop and Wait ARQ to cancel
 // the retransmit timer
 func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) error {
+	f.log.Debug("processAck")
 	// Ensure payload bytes are all zeros.
 	// see Panoramix Mix Network End-to-end Protocol Specification
 	// https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
@@ -130,6 +131,7 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 	if !utils.CtIsZero(payload) {
 		return errors.New("ACK payload bytes are not all 0x00")
 	}
+	f.log.Debug("cancelling retransmition of message block %x", id)
 	f.scheduler.Cancel(id)
 	return nil
 }
@@ -195,7 +197,7 @@ func NewFetchScheduler(logBackend *log.Backend, fetchers map[string]*Fetcher, du
 		fetchers: fetchers,
 		duration: duration,
 	}
-	s.sched = scheduler.New(s.handleFetch)
+	s.sched = scheduler.New(s.handleFetch, logBackend, "fetcher")
 	return &s
 }
 

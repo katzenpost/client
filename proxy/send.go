@@ -52,14 +52,15 @@ type Sender struct {
 // NewSender creates a new Sender
 func NewSender(logBackend *log.Backend, identity string, pool *session_pool.SessionPool, store *storage.Store, routeFactory *path_selection.RouteFactory, userPKI user_pki.UserPKI, handler *block.Handler) (*Sender, error) {
 	s := Sender{
-		log:          logBackend.GetLogger(fmt.Sprintf("Sender-%s", identity)),
-		pool:         pool,
 		identity:     identity,
+		pool:         pool,
 		store:        store,
 		routeFactory: routeFactory,
 		userPKI:      userPKI,
 		handler:      handler,
+		log:          logBackend.GetLogger(fmt.Sprintf("Sender-%s", identity)),
 	}
+	s.log.Debugf("New Sender created.")
 	return &s, nil
 }
 
@@ -112,13 +113,14 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 
 // Send sends an encrypted block over the mixnet
 func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storage.EgressBlock) (time.Duration, error) {
-	s.log.Debug("Send")
+	s.log.Debug("Send: Sending message block...")
 	var rtt time.Duration
 	session, mutex, err := s.pool.Get(s.identity)
 	if err != nil {
 		s.log.Debugf("Failed to get session for %s: %s", s.identity, err)
 		return rtt, err
 	}
+	s.log.Debug("retrieved session")
 	receiverKey, err := s.userPKI.GetKey(storageBlock.Recipient)
 	if err != nil {
 		s.log.Debugf("Failed to get userPKI key for %s: %s", storageBlock.Recipient, err)
@@ -129,11 +131,13 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 		s.log.Debugf("Failed to encrypt block: %s", err)
 		return rtt, err
 	}
+	s.log.Debug("encrypted message block")
 	cmd, rtt, err := s.composeSphinxPacket(blockID, storageBlock, blockCiphertext)
 	if err != nil {
 		s.log.Debugf("Failed to compose Sphinx packet: %s", err)
 		return rtt, err
 	}
+	s.log.Debug("composed sphinx packet")
 	mutex.Lock()
 	defer mutex.Unlock()
 	err = session.SendCommand(cmd)
@@ -141,6 +145,7 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 		s.log.Debugf("SendCommand failed: %s", err)
 		return rtt, err
 	}
+	s.log.Debug("sphinx packet sent!")
 	return rtt, nil
 }
 
@@ -164,7 +169,7 @@ func NewSendScheduler(logBackend *log.Backend, senders map[string]*Sender) *Send
 		senders:      senders,
 		cancellation: make(map[[sphinxConstants.SURBIDLength]byte]bool),
 	}
-	s.sched = scheduler.New(s.handleSend)
+	s.sched = scheduler.New(s.handleSend, logBackend, "sender")
 	return &s
 }
 
@@ -174,6 +179,7 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 	rtt, err := s.senders[sender].Send(blockID, storageBlock)
 	if err != nil {
 		s.log.Debugf("Send failure: %s", err)
+		rtt = 10 * time.Second
 	}
 	// schedule a resend in the future
 	// (but it can be cancelled if we receive an ACK)
@@ -182,19 +188,23 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 
 // add adds a retransmit job to the scheduler
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.EgressBlock) {
-	s.log.Debugf("schedule a send in %v", rtt)
+	s.log.Debug("add begin.")
+	s.log.Debugf("schedule a send in %v", rtt+constants.RoundTripTimeSlop)
 	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
 	s.Lock()
 	defer s.Unlock()
 	s.cancellation[storageBlock.SURBID] = false
+	s.log.Debug("add done.")
 }
 
 func (s *SendScheduler) isCancelled(id [sphinxConstants.SURBIDLength]byte) bool {
 	s.RLock()
 	defer s.RUnlock()
 	cancelled, ok := s.cancellation[id]
-	if ok && !cancelled {
-		return true
+	if ok {
+		if cancelled {
+			return true
+		}
 	} else {
 		s.log.Error("cancellation map failure")
 	}
@@ -218,13 +228,17 @@ func (s *SendScheduler) handleSend(task interface{}) {
 
 	storageBlock, ok := task.(*storage.EgressBlock)
 	if !ok {
-		s.log.Error("SendScheduler got invalid task from priority scheduler.")
+		s.log.Error("wtf? got invalid task from priority scheduler.")
 		return
 	}
-	if !s.isCancelled(storageBlock.SURBID) {
+	if s.isCancelled(storageBlock.SURBID) {
+		s.log.Debug("retransmit cancelled!")
+	} else {
+		s.log.Debug("retransmit not cancelled")
 		rtt, err := s.senders[storageBlock.Sender].Send(&storageBlock.BlockID, storageBlock)
 		if err != nil {
-			s.log.Error(err)
+			s.log.Errorf("Send failure: %s", err)
+			rtt = 10 * time.Second
 		}
 		s.add(rtt, storageBlock)
 	}

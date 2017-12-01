@@ -17,11 +17,14 @@
 package scheduler
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/queue"
+	"github.com/op/go-logging"
 )
 
 // PriorityScheduler is a priority queue backed scheduler
@@ -31,20 +34,23 @@ type PriorityScheduler struct {
 	queue       *queue.PriorityQueue
 	taskHandler func(interface{})
 	timer       *time.Timer
+	log         *logging.Logger
 }
 
 // New creates a new PriorityScheduler given a taskHandler function
 // which is eventually responsible for dealing with the scheduled items
-func New(taskHandler func(interface{})) *PriorityScheduler {
+func New(taskHandler func(interface{}), logBackend *log.Backend, name string) *PriorityScheduler {
 	s := PriorityScheduler{
 		queue:       queue.New(),
 		taskHandler: taskHandler,
+		log:         logBackend.GetLogger(fmt.Sprintf("PriorityScheduler-%s", name)),
 	}
 	return &s
 }
 
 // pop pops an item off the priority queue with a lock
 func (s *PriorityScheduler) pop() *queue.Entry {
+	s.log.Debug("pop")
 	s.Lock()
 	defer s.Unlock()
 	return s.queue.Pop()
@@ -54,6 +60,7 @@ func (s *PriorityScheduler) pop() *queue.Entry {
 // to be processed before scheduling
 // the handling of the next scheduled task
 func (s *PriorityScheduler) run() {
+	s.log.Debug("run")
 	entry := s.pop()
 	s.taskHandler(entry.Value)
 	s.schedule()
@@ -61,6 +68,7 @@ func (s *PriorityScheduler) run() {
 
 // peek peeks into the priority queue with a read-lock
 func (s *PriorityScheduler) peek() *queue.Entry {
+	s.log.Debug("peek")
 	s.RLock()
 	defer s.RUnlock()
 	return s.queue.Peek()
@@ -70,16 +78,22 @@ func (s *PriorityScheduler) peek() *queue.Entry {
 // priority item. Queue priority is compared to
 // current monotime.
 func (s *PriorityScheduler) schedule() {
+	s.log.Debug("schedule")
 	entry := s.peek()
 	if entry == nil {
+		s.log.Debug("peeked nil")
 		return
 	}
-	s.Lock()
-	defer s.Unlock()
+	s.log.Debugf("peeked priority %d", entry.Priority)
 	now := monotime.Now()
 	if time.Duration(entry.Priority) <= now {
-		s.timer = time.AfterFunc(time.Duration(0), s.run)
+		s.log.Debug("running task now")
+		//s.timer = time.AfterFunc(time.Duration(0), s.run)
+		go s.run()
 	} else {
+		s.log.Debugf("running task in %v", time.Duration(entry.Priority)-now)
+		s.Lock()
+		defer s.Unlock()
 		if s.timer != nil {
 			s.timer.Stop()
 		}
@@ -89,6 +103,7 @@ func (s *PriorityScheduler) schedule() {
 
 // enqueue adds task to priority queue and uses mutex
 func (s *PriorityScheduler) enqueue(priority uint64, task interface{}) {
+	s.log.Debug("enqueue")
 	s.Lock()
 	defer s.Unlock()
 
@@ -97,6 +112,7 @@ func (s *PriorityScheduler) enqueue(priority uint64, task interface{}) {
 
 // Add adds a task to the scheduler
 func (s *PriorityScheduler) Add(duration time.Duration, task interface{}) {
+	s.log.Debug("Add")
 	now := monotime.Now()
 	priority := now + duration
 	s.enqueue(uint64(priority), task)
