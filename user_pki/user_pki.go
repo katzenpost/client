@@ -39,11 +39,11 @@ type User struct {
 }
 
 type JsonFileUserPKI struct {
-	userMap map[string]*ecdh.PublicKey
+	UserMap map[string]*ecdh.PublicKey
 }
 
 func (j *JsonFileUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
-	value, ok := j.userMap[strings.ToLower(email)]
+	value, ok := j.UserMap[strings.ToLower(email)]
 	if !ok {
 		return nil, errors.New("json user pki email lookup failed")
 	}
@@ -81,7 +81,7 @@ func UserPKIFromJsonFile(filePath string) (*JsonFileUserPKI, error) {
 		userKeyMap[users[i].Email] = &key
 	}
 	pki := JsonFileUserPKI{
-		userMap: userKeyMap,
+		UserMap: userKeyMap,
 	}
 	return &pki, nil
 }

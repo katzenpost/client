@@ -27,20 +27,11 @@ const (
 	// additional time we should wait around for the ACK to arrive before a retransmission.
 	// (XXX: fix me, we need to set this appropriately.
 	// Current value may be too conservative. )
-	RoundTripTimeSlop = 3 * time.Minute
+	RoundTripTimeSlop = 4 * time.Second
 
 	// DatabaseConnectTimeout is a duration used as the connect timeout
 	// when we access our local databases (for POP3&SMTP proxies).
 	DatabaseConnectTimeout = 3 * time.Second
-
-	// PoissonLambda is the poisson distribution's lambda parameter
-	// used for setting mix hop delays.
-	// (XXX Ania Piotrowska and Claudia Diaz fix me: the team of mathematicians
-	// should decide on the value that this Poisson Lambda parameter should be set to)
-	PoissonLambda = float64(.234)
-
-	// HopsPerPath is the number of mix hops per path through the mix network
-	HopsPerPath = 3
 
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
