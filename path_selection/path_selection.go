@@ -49,7 +49,7 @@ func DurationFromFloat(delay float64) time.Duration {
 func getDelays(lambda float64, maxHopDelay uint64, count int) []float64 {
 	cryptRand := rand.NewMath()
 	delays := make([]float64, count)
-	for i := 0; i < count-1; i++ {
+	for i := 0; i < count; i++ {
 		delay := rand.Exp(cryptRand, lambda)
 		if delay > float64(maxHopDelay) {
 			delay = float64(maxHopDelay)
@@ -210,7 +210,9 @@ func (r *RouteFactory) newPathVector(till time.Duration,
 				// Terminal hop, add the recipient.
 				recipient := new(commands.Recipient)
 				copy(recipient.ID[:], recipientID[:])
-				path[i].Commands = []commands.RoutingCommand{recipient}
+				delay := new(commands.NodeDelay)
+				delay.Delay = uint32(delays[i])
+				path[i].Commands = []commands.RoutingCommand{recipient, delay}
 			}
 		}
 	}
