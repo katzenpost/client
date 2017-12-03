@@ -184,7 +184,9 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 		}
 		senders[identity] = sender
 	}
+
 	c.sendScheduler = proxy.NewSendScheduler(c.logBackend, senders)
+
 	for _, identity := range identities {
 		privateKey, err := c.accountsMap.GetIdentityKey(identity)
 		if err != nil {
@@ -197,6 +199,8 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 
 	c.smtpProxy = proxy.NewSmtpProxy(c.logBackend, c.accountsMap, rand.Reader, c.userPKI, c.store, c.routeFactory, c.sendScheduler)
 	c.periodicRetriever = proxy.NewFetchScheduler(c.logBackend, fetchers, time.Minute*1)
+	c.sendScheduler.SetFetchScheduler(c.periodicRetriever)
+
 	c.periodicRetriever.Start()
 	c.pop3Service = proxy.NewPop3Service(c.store)
 

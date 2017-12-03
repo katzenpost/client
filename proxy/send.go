@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/client/constants"
+	//"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/block"
 	"github.com/katzenpost/client/path_selection"
 	"github.com/katzenpost/client/scheduler"
@@ -154,10 +154,11 @@ func (s *Sender) Send(blockID *[storage.BlockIDLength]byte, storageBlock *storag
 type SendScheduler struct {
 	sync.RWMutex
 
-	log          *logging.Logger
-	sched        *scheduler.PriorityScheduler
-	senders      map[string]*Sender
-	cancellation map[[sphinxConstants.SURBIDLength]byte]bool
+	log            *logging.Logger
+	sched          *scheduler.PriorityScheduler
+	senders        map[string]*Sender
+	cancellation   map[[sphinxConstants.SURBIDLength]byte]bool
+	fetchScheduler *FetchScheduler
 }
 
 // NewSendScheduler creates a new SendScheduler which is used
@@ -183,14 +184,17 @@ func (s *SendScheduler) Send(sender string, blockID *[storage.BlockIDLength]byte
 	}
 	// schedule a resend in the future
 	// (but it can be cancelled if we receive an ACK)
-	s.add(rtt, storageBlock)
+	s.add(rtt+(2*time.Minute), storageBlock)
+	if s.fetchScheduler != nil {
+		s.fetchScheduler.AddOnceFetch(rtt+(20*time.Second), sender)
+	}
 }
 
 // add adds a retransmit job to the scheduler
 func (s *SendScheduler) add(rtt time.Duration, storageBlock *storage.EgressBlock) {
 	s.log.Debug("add begin.")
-	s.log.Debugf("schedule a send in %v", rtt+constants.RoundTripTimeSlop)
-	s.sched.Add(rtt+constants.RoundTripTimeSlop, storageBlock)
+	s.log.Debugf("schedule a send in %v", rtt)
+	s.sched.Add(rtt, storageBlock)
 	s.Lock()
 	defer s.Unlock()
 	s.cancellation[storageBlock.SURBID] = false
@@ -235,13 +239,15 @@ func (s *SendScheduler) handleSend(task interface{}) {
 		s.log.Debug("retransmit cancelled!")
 	} else {
 		s.log.Debug("retransmit not cancelled")
-		rtt, err := s.senders[storageBlock.Sender].Send(&storageBlock.BlockID, storageBlock)
-		if err != nil {
-			s.log.Errorf("Send failure: %s", err)
-			rtt = 10 * time.Second
-		}
-		s.add(rtt, storageBlock)
+		s.Send(storageBlock.Sender, &storageBlock.BlockID, storageBlock)
 	}
+}
+
+// SetFetchScheduler sets the fetch scheduler
+// which is used to fetch the SURB ACK after
+// a message is sent
+func (s *SendScheduler) SetFetchScheduler(fetchScheduler *FetchScheduler) {
+	s.fetchScheduler = fetchScheduler
 }
 
 // Shutdown shuts down the send scheduler

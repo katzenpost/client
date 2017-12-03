@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/client/session_pool"
 	"github.com/katzenpost/client/storage"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire/commands"
@@ -61,6 +62,7 @@ func NewFetcher(logBackend *log.Backend, identity string, pool *session_pool.Ses
 // by either storing it in the DB or
 // by cancelling a retransmit if it's an ACK message
 func (f *Fetcher) Fetch() (uint8, error) {
+	f.log.Debug("Fetch")
 	var queueHintSize uint8
 	session, mutex, err := f.pool.Get(f.Identity)
 	if err != nil {
@@ -128,7 +130,15 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 	// see Panoramix Mix Network End-to-end Protocol Specification
 	// https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
 	// Section 4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
-	if !utils.CtIsZero(payload) {
+	surbKeys, err := f.store.GetSURBKeys(id)
+	if err != nil {
+		return err
+	}
+	plaintext, err := sphinx.DecryptSURBPayload(payload, surbKeys)
+	if err != nil {
+		return err
+	}
+	if !utils.CtIsZero(plaintext) {
 		return errors.New("ACK payload bytes are not all 0x00")
 	}
 	f.log.Debug("cancelling retransmition of message block %x", id)
@@ -139,6 +149,7 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 // processMessage receives a message Block, decrypts it and
 // writes it to our local bolt db for eventual processing.
 func (f *Fetcher) processMessage(payload []byte) error {
+	f.log.Debug("processMessage")
 	// XXX for now we ignore the peer identity
 	b, _, err := f.handler.Decrypt(payload)
 	if err != nil {
@@ -183,21 +194,23 @@ func (f *Fetcher) processMessage(payload []byte) error {
 // FetchScheduler is scheduler which is used to periodically
 // fetch messages using a set of fetchers
 type FetchScheduler struct {
-	log      *logging.Logger
-	fetchers map[string]*Fetcher
-	sched    *scheduler.PriorityScheduler
-	duration time.Duration
+	log             *logging.Logger
+	fetchers        map[string]*Fetcher
+	cyclicScheduler *scheduler.PriorityScheduler
+	onceScheduler   *scheduler.PriorityScheduler
+	cyclicDuration  time.Duration
 }
 
 // NewFetchScheduler creates a new FetchScheduler
 // given a slice of identity strings and a duration
 func NewFetchScheduler(logBackend *log.Backend, fetchers map[string]*Fetcher, duration time.Duration) *FetchScheduler {
 	s := FetchScheduler{
-		log:      logBackend.GetLogger("FetchScheduler"),
-		fetchers: fetchers,
-		duration: duration,
+		log:            logBackend.GetLogger("FetchScheduler"),
+		fetchers:       fetchers,
+		cyclicDuration: duration,
 	}
-	s.sched = scheduler.New(s.handleFetch, logBackend, "fetcher")
+	s.cyclicScheduler = scheduler.New(s.handleCyclicFetch, logBackend, "cyclic_fetcher")
+	s.onceScheduler = scheduler.New(s.handleOnceFetch, logBackend, "once_fetcher")
 	return &s
 }
 
@@ -205,30 +218,63 @@ func NewFetchScheduler(logBackend *log.Backend, fetchers map[string]*Fetcher, du
 func (s *FetchScheduler) Start() {
 	s.log.Debug("Starting")
 	for _, fetcher := range s.fetchers {
-		s.log.Debugf("Adding fetcher with cyclic duration %v", s.duration)
-		s.sched.Add(s.duration, fetcher.Identity)
+		s.log.Debugf("Adding fetcher with cyclic duration %v", s.cyclicDuration)
+		s.cyclicScheduler.Add(s.cyclicDuration, fetcher.Identity)
 	}
+}
+
+// AddOnceFetch add a scheduled fetch to the onceScheduler
+func (s *FetchScheduler) AddOnceFetch(duration time.Duration, identity string) {
+	s.log.Debugf("AddOnceFetch identity %s duration %v", identity, duration)
+	s.onceScheduler.Add(duration, identity)
 }
 
 // Shutdown shuts down the scheduler
 func (s *FetchScheduler) Shutdown() {
 	s.log.Debug("Shutting down")
-	s.sched.Shutdown()
+	s.cyclicScheduler.Shutdown()
+	s.onceScheduler.Shutdown()
 }
 
-// handleFetch is called by the our scheduler when
-// a fetch must be performed. After the fetch, we
-// either schedule an immediate another fetch or a
-// delayed fetch depending if there are more messages left.
-// See "Panoramix Mix Network End-to-end Protocol Specification"
-// https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
-func (s *FetchScheduler) handleFetch(task interface{}) {
+// handleOnceFetch handles the fetching one time for a SURB ACK
+func (s *FetchScheduler) handleOnceFetch(task interface{}) {
 	identity, ok := task.(string)
 	if !ok {
 		s.log.Error("FetchScheduler got invalid task from priority scheduler.")
 		return
 	}
-	s.log.Debugf("handleFetch for identity: %s", identity)
+	s.log.Debugf("handleOnceFetch for identity: %s", identity)
+	fetcher, ok := s.fetchers[identity]
+	if !ok {
+		err := errors.New("fetcher identity not found")
+		s.log.Error(err)
+		return
+	}
+	queueSizeHint, err := fetcher.Fetch()
+	if err != nil {
+		s.log.Error(err)
+		return
+	}
+	if queueSizeHint != 0 {
+		s.log.Debugf("once_fetch: %s queueSizeHint is %d, scheduling next fetch immediately.", identity, queueSizeHint)
+		s.cyclicScheduler.Add(time.Duration(0), identity)
+	}
+	return
+}
+
+// handleCyclicFetch is called by the our scheduler when
+// a fetch must be performed. After the fetch, we
+// either schedule an immediate another fetch or a
+// delayed fetch depending if there are more messages left.
+// See "Panoramix Mix Network End-to-end Protocol Specification"
+// https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt
+func (s *FetchScheduler) handleCyclicFetch(task interface{}) {
+	identity, ok := task.(string)
+	if !ok {
+		s.log.Error("FetchScheduler got invalid task from priority scheduler.")
+		return
+	}
+	s.log.Debugf("handleCyclicFetch for identity: %s", identity)
 	fetcher, ok := s.fetchers[identity]
 	if !ok {
 		err := errors.New("fetcher identity not found")
@@ -241,11 +287,11 @@ func (s *FetchScheduler) handleFetch(task interface{}) {
 		return
 	}
 	if queueSizeHint == 0 {
-		s.log.Debugf("%s queueSizeHint is zero, scheduling next fetch in %v seconds", identity, s.duration)
-		s.sched.Add(s.duration, identity)
+		s.log.Debugf("%s queueSizeHint is zero, scheduling next fetch in %v seconds", identity, s.cyclicDuration)
+		s.cyclicScheduler.Add(s.cyclicDuration, identity)
 	} else {
-		s.log.Debugf("%s queueSizeHing is %d, scheduling next fetch immediately.", identity, queueSizeHint)
-		s.sched.Add(time.Duration(0), identity)
+		s.log.Debugf("%s queueSizeHint is %d, scheduling next fetch immediately.", identity, queueSizeHint)
+		s.cyclicScheduler.Add(time.Duration(0), identity)
 	}
 	return
 }

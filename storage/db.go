@@ -17,6 +17,7 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -304,6 +305,35 @@ func (s *Store) Update(blockID *[BlockIDLength]byte, b *EgressBlock) error {
 	}
 	err := s.db.Update(transaction)
 	return err
+}
+
+// GetSURBKeys returns the SURB Keys given a SURB ID
+func (s *Store) GetSURBKeys(surbId [sphinxconstants.SURBIDLength]byte) ([]byte, error) {
+	SURBKeys := []byte{}
+	transaction := func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(EgressBucketName))
+		if b == nil {
+			return errors.New("GetSURBKeys failed to get the bucket")
+		}
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			egressBlock, err := EgressBlockFromBytes(v)
+			if err != nil {
+				return err
+			}
+			if bytes.Equal(egressBlock.SURBID[:], surbId[:]) {
+				SURBKeys = make([]byte, len(egressBlock.SURBKeys))
+				copy(SURBKeys, egressBlock.SURBKeys)
+				return nil
+			}
+		}
+		return nil
+	}
+	err := s.db.View(transaction)
+	if err != nil {
+		return nil, err
+	}
+	return SURBKeys, nil
 }
 
 // GetKeys returns all the keys currently in the database
