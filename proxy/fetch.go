@@ -134,6 +134,9 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 	if err != nil {
 		return err
 	}
+
+	f.log.Debugf("surbKeys len %d", len(surbKeys))
+	f.log.Debugf("surb payload len %d", len(payload))
 	plaintext, err := sphinx.DecryptSURBPayload(payload, surbKeys)
 	if err != nil {
 		return err

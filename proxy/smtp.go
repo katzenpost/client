@@ -191,9 +191,7 @@ func (p *SMTPProxy) enqueueMessage(sender, receiver string, message []byte) erro
 		senderID := [sphinxconstants.RecipientIDLength]byte{}
 		copy(senderID[:], senderUser)
 		storageBlock := storage.EgressBlock{
-			Sender:            sender,
 			SenderProvider:    senderProvider,
-			Recipient:         receiver,
 			RecipientID:       recipientID,
 			SenderID:          senderID,
 			RecipientProvider: recipientProvider,

@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -42,6 +41,13 @@ const (
 	// We intentionally have a single boltdb bucket that handles
 	// all the outgoing messages for the client.
 	EgressBucketName = "outgoing"
+
+	// ProviderIDLength is the length of a Provider ID
+	ProviderIDLength = 64
+
+	surbKeysLen = 320 // XXX
+
+	egressBlockLength = BlockIDLength + (ProviderIDLength * 2) + (sphinxconstants.RecipientIDLength * 2) + 1 + surbKeysLen + sphinxconstants.SURBIDLength + block.BlockLength
 )
 
 // ingressBucketNameFromAccount is a helper function that
@@ -66,19 +72,15 @@ type EgressBlock struct {
 	// BlockID is used to uniquely identify storage blocks
 	BlockID [BlockIDLength]byte
 
-	// Sender is the sender identity (aka e-mail address)
-	Sender string
-
 	// SenderProvider is the Provider for a given sender.
 	// (the part of the email address after the @-sign)
-	SenderProvider string
-
-	// Recipient is the recipient identity/e-mail address
-	Recipient string
+	// zero padded to length
+	SenderProvider [ProviderIDLength]byte
 
 	// RecipientProvider is the Provider name of the recipient
 	// (the part of the email address after the @-sign)
-	RecipientProvider string
+	// zero padded to length
+	RecipientProvider [ProviderIDLength]byte
 
 	// RecipientID is the user ID for a given recipient
 	// which is padded to fixed length
@@ -104,100 +106,44 @@ type EgressBlock struct {
 	Block block.Block
 }
 
-// jsonEgressBlock is a json serializable representation of EgressBlock
-type jsonEgressBlock struct {
-	BlockID           string
-	Sender            string
-	SenderProvider    string
-	Recipient         string
-	RecipientProvider string
-	RecipientID       string
-	SenderID          string
-	SendAttempts      int
-	SURBKeys          string
-	SURBID            string
-	JsonBlock         *block.JsonBlock
-}
-
-// EgressBlock method returns a *EgressBlock or error
-// given the jsonEgressBlock receiver struct
-func (j *jsonEgressBlock) ToEgressBlock() (*EgressBlock, error) {
-	recipientID, err := base64.StdEncoding.DecodeString(j.RecipientID)
-	if err != nil {
-		return nil, err
-	}
-	senderID, err := base64.StdEncoding.DecodeString(j.SenderID)
-	if err != nil {
-		return nil, err
-	}
-	blockID, err := base64.StdEncoding.DecodeString(j.BlockID)
-	if err != nil {
-		return nil, err
-	}
-	surbID, err := base64.StdEncoding.DecodeString(j.SURBID)
-	if err != nil {
-		return nil, err
-	}
-	surbKeys, err := base64.StdEncoding.DecodeString(j.SURBKeys)
-	if err != nil {
-		return nil, err
-	}
-	b, err := j.JsonBlock.ToBlock()
-	if err != nil {
-		return nil, err
-	}
-	s := EgressBlock{
-		Sender:            j.Sender,
-		SenderProvider:    j.SenderProvider,
-		Recipient:         j.Recipient,
-		RecipientProvider: j.RecipientProvider,
-		SendAttempts:      uint8(j.SendAttempts),
-		Block:             *b,
-	}
-	copy(s.BlockID[:], blockID)
-	copy(s.RecipientID[:], recipientID)
-	copy(s.SenderID[:], senderID)
-	copy(s.SURBKeys[:], surbKeys)
-	copy(s.SURBID[:], surbID)
-	return &s, nil
-}
-
-// ToJsonEgressBlock returns a *jsonEgressBlock
-// given the EgressBlock receiver struct
-func (s *EgressBlock) ToJsonEgressBlock() *jsonEgressBlock {
-	j := jsonEgressBlock{
-		BlockID:           base64.StdEncoding.EncodeToString(s.BlockID[:]),
-		Sender:            s.Sender,
-		SenderProvider:    s.SenderProvider,
-		Recipient:         s.Recipient,
-		RecipientProvider: s.RecipientProvider,
-		RecipientID:       base64.StdEncoding.EncodeToString(s.RecipientID[:]),
-		SenderID:          base64.StdEncoding.EncodeToString(s.SenderID[:]),
-		SendAttempts:      int(s.SendAttempts),
-		SURBKeys:          base64.StdEncoding.EncodeToString(s.SURBKeys[:]),
-		SURBID:            base64.StdEncoding.EncodeToString(s.SURBID[:]),
-		JsonBlock:         s.Block.ToJsonBlock(),
-	}
-	return &j
-}
-
-// Bytes returns the given EgressBlock receiver struct
-// into a byte slice of json
 func (s *EgressBlock) ToBytes() ([]byte, error) {
-	j := s.ToJsonEgressBlock()
-	return json.Marshal(j)
-}
-
-// FromBytes returns a *EgressBlock or error
-// given a byte slice of json data
-func EgressBlockFromBytes(raw []byte) (*EgressBlock, error) {
-	j := jsonEgressBlock{}
-	err := json.Unmarshal(raw, &j)
+	buf := make([]byte, egressBlockLength)
+	copy(buf, s.BlockID[:])
+	offset := BlockIDLength
+	copy(buf[offset:], s.SenderProvider[:])
+	offset += ProviderIDLength
+	copy(buf[offset:], s.RecipientProvider[:])
+	offset += ProviderIDLength
+	copy(buf[offset:], s.RecipientID[:])
+	offset += sphinxconstants.RecipientIDLength
+	copy(buf[offset:], s.SenderID[:])
+	offset += sphinxconstants.RecipientIDLength
+	buf[offset] = s.SendAttempts
+	offset += 1
+	copy(buf[offset:], s.SURBKeys)
+	offset += surbKeysLen
+	copy(buf[offset:], s.SURBID)
+	offset += sphinxconstants.SURBIDLength
+	rawBlock, err := s.Block.ToBytes()
 	if err != nil {
 		return nil, err
 	}
-	s, err := j.ToEgressBlock()
-	return s, err
+	copy(buf[offset:], rawBlock)
+	return buf, nil
+}
+
+func (s *EgressBlock) FromBytes(buf []byte) error {
+	if len(buf) != egressBlockLength {
+		return fmt.Errorf("egress block: invalid byte serialized length: %v (Expecting %v)", len(buf), egressBlockLength)
+	}
+
+	end := BlockIDLength
+	copy(s.BlockID[:], buf[:end])
+	offset := BlockIDLength
+	end += BlockIDLength
+	copy(s.SenderProvider[:], buf[offset:end])
+
+	return nil // XXX fix me
 }
 
 // IngressBlock is used to store incoming message blocks retrieved
@@ -322,12 +268,16 @@ func (s *Store) GetSURBKeys(surbId [sphinxconstants.SURBIDLength]byte) ([]byte, 
 				return err
 			}
 			if bytes.Equal(egressBlock.SURBID[:], surbId[:]) {
+				if len(egressBlock.SURBKeys) == 0 {
+					return fmt.Errorf("SURB keys is zero len for SURB ID %x\n%v", surbId[:], egressBlock)
+					//return fmt.Errorf("SURB keys is zero len for SURB ID %x", surbId[:])
+				}
 				SURBKeys = make([]byte, len(egressBlock.SURBKeys))
 				copy(SURBKeys, egressBlock.SURBKeys)
 				return nil
 			}
 		}
-		return nil
+		return fmt.Errorf("SURB keys not found for SURB ID %x", surbId[:])
 	}
 	err := s.db.View(transaction)
 	if err != nil {

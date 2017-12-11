@@ -81,6 +81,10 @@ func (s *Sender) composeSphinxPacket(blockID *[storage.BlockIDLength]byte, stora
 	if err != nil {
 		return nil, rtt, err
 	}
+
+	// XXX debugging
+	s.log.Debugf("surb len %d surbKeys len %d", len(surb), len(surbKeys))
+
 	storageBlock.SURBKeys = surbKeys
 	storageBlock.SendAttempts += 1
 	storageBlock.SURBID = *surbID

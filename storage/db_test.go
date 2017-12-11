@@ -22,9 +22,39 @@ import (
 	"testing"
 
 	"github.com/katzenpost/client/crypto/block"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSerialization(t *testing.T) {
+	require := require.New(t)
+
+	b := block.Block{
+		TotalBlocks: uint16(1),
+		BlockID:     uint16(1),
+		Block:       []byte(`"The time has come," the Walrus said`),
+	}
+	s := EgressBlock{
+		SenderProvider:    "acme.com",
+		RecipientProvider: "nsa.gov",
+		Block:             b,
+	}
+	_, err := rand.Reader.Read(s.SURBID[:])
+	require.NoError(err, "wtf")
+	_, err = rand.Reader.Read(s.SURBKeys)
+	require.NoError(err, "wtf")
+
+	rawEgressBlock, err := b.ToBytes()
+	require.NoError(err, "wtf")
+
+	t.Logf("rawEgressBlock is %x", rawEgressBlock)
+
+	egressBlock, err := EgressBlockFromBytes(rawEgressBlock)
+	require.NoError(err, "wtf")
+
+	t.Logf("SURBID %x SURBKeys %x", egressBlock.SURBID, egressBlock.SURBKeys)
+}
 
 func TestDBBasics(t *testing.T) {
 	require := require.New(t)
