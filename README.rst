@@ -1,6 +1,10 @@
 
+
 .. image:: https://travis-ci.org/katzenpost/client.svg?branch=master
   :target: https://travis-ci.org/katzenpost/client
+
+.. image:: https://godoc.org/github.com/katzenpost/client?status.svg
+  :target: https://godoc.org/github.com/katzenpost/client
 
 
 The Panoramix Decryption Mix Network Client Library
