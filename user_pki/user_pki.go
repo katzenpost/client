@@ -38,11 +38,11 @@ type User struct {
 	Key   string
 }
 
-type JsonFileUserPKI struct {
+type StaticUserPKI struct {
 	UserMap map[string]*ecdh.PublicKey
 }
 
-func (j *JsonFileUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
+func (j *StaticUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
 	value, ok := j.UserMap[strings.ToLower(email)]
 	if !ok {
 		return nil, errors.New("json user pki email lookup failed")
@@ -50,7 +50,7 @@ func (j *JsonFileUserPKI) GetKey(email string) (*ecdh.PublicKey, error) {
 	return value, nil
 }
 
-func UserPKIFromJsonFile(filePath string) (*JsonFileUserPKI, error) {
+func FromJsonFile(filePath string) (*StaticUserPKI, error) {
 	fileData, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func UserPKIFromJsonFile(filePath string) (*JsonFileUserPKI, error) {
 		}
 		userKeyMap[users[i].Email] = &key
 	}
-	pki := JsonFileUserPKI{
+	pki := StaticUserPKI{
 		UserMap: userKeyMap,
 	}
 	return &pki, nil

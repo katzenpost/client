@@ -18,6 +18,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/crypto/vault"
+	"github.com/katzenpost/client/user_pki"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -44,6 +46,11 @@ var defaultLogging = Logging{
 	Level:   defaultLogLevel,
 }
 
+type UserPKI struct {
+	Email     string
+	PublicKey string
+}
+
 // Account is used to deserialize the account sections
 // of the configuration file.
 type Account struct {
@@ -53,6 +60,9 @@ type Account struct {
 	// Provider is the second part of an e-mail address
 	// after the @-sign.
 	Provider string
+
+	// PrivateKey is the private identity key for a given client account
+	PrivateKey string
 }
 
 // Proxy is used to deserialize the proxy
@@ -140,6 +150,8 @@ type Config struct {
 	Logging *Logging
 	// Account is the list of accounts represented by this client configuration
 	Account []Account
+	// UserPKI is the list of emails and public keys in the katzenpost system
+	UserPKI []UserPKI
 	// PKI configures the PKI
 	PKI *PKI
 	// SMTPProxy is the transport configuration of the SMTP submission proxy
@@ -208,21 +220,36 @@ func (c *Config) GetAccountKey(keyType string, account Account, passphrase strin
 	return &key, nil
 }
 
-// AccountsMap returns an Accounts struct which contains
-// a map of email to private key for each account
-// arguments:
-// * keyType - indicates weather the key is used for end to end crypto or
-//   wire protocol link layer crypto and should be set to one of the following:
-//   * constants.EndToEndKeyType
-//   * constants.LinkLayerKeyType
-// * keysDir - a filepath to the directory containing the key files.
-//   must not end in a forward slash /.
-// * passphrase - a secret passphrase which is used to decrypt keys on disk
-func (c *Config) AccountsMap(keyType, passphrase string) (*AccountsMap, error) {
+func (c *Config) GetUserPKI() (user_pki.UserPKI, error) {
+	userPKI := &user_pki.StaticUserPKI{
+		UserMap: make(map[string]*ecdh.PublicKey),
+	}
+	for _, pkiEntry := range c.UserPKI {
+		rawKey, err := hex.DecodeString(pkiEntry.PublicKey)
+		if err != nil {
+			return nil, err
+		}
+		privateKey := new(ecdh.PrivateKey)
+		err = privateKey.FromBytes(rawKey)
+		if err != nil {
+			return nil, err
+		}
+		userPKI.UserMap[pkiEntry.Email] = privateKey.PublicKey()
+	}
+	return userPKI, nil
+}
+
+// AccountsMap returns an AccountsMap type
+func (c *Config) GetAccountsMap() (*AccountsMap, error) {
 	accounts := make(AccountsMap)
 	for _, account := range c.Account {
 		email := fmt.Sprintf("%s@%s", account.Name, account.Provider)
-		privateKey, err := c.GetAccountKey(keyType, account, passphrase)
+		rawKey, err := hex.DecodeString(account.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		privateKey := new(ecdh.PrivateKey)
+		err = privateKey.FromBytes(rawKey)
 		if err != nil {
 			return nil, err
 		}
@@ -277,20 +304,18 @@ func SplitEmail(email string) (string, string, error) {
 }
 
 // GenerateKeys creates the key files necessary to use the client
-func (c *Config) GenerateKeys(passphrase string) error {
-	var err error
+func (c *Config) GenerateKeys() error {
 	for i := 0; i < len(c.Account); i++ {
 		name := c.Account[i].Name
 		provider := c.Account[i].Provider
 		if name != "" && provider != "" {
-			err = writeKey(c.DataDir, constants.LinkLayerKeyType, name, provider, passphrase)
+			email := fmt.Sprintf("%s@%s", name, provider)
+			privateKey, err := ecdh.NewKeypair(rand.Reader)
 			if err != nil {
 				return err
 			}
-			err = writeKey(c.DataDir, constants.EndToEndKeyType, name, provider, passphrase)
-			if err != nil {
-				return err
-			}
+			fmt.Printf("%s %x\n", email, privateKey.Bytes())
+			fmt.Printf("publicKey: %s %x\n", email, privateKey.PublicKey().Bytes())
 		} else {
 			return errors.New("received nil Account name or provider")
 		}

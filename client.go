@@ -18,7 +18,6 @@
 package client
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -117,9 +116,19 @@ func (c *Client) Shutdown() {
 
 // New returns a new Client instance parameterized with the specified
 // configuration.
-func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.UserPKI) (*Client, error) {
+func New(cfg *config.Config) (*Client, error) {
 	var err error
 	c := new(Client)
+
+	c.accountsMap, err = cfg.GetAccountsMap()
+	if err != nil {
+		return nil, err
+	}
+	c.userPKI, err = cfg.GetUserPKI()
+	if err != nil {
+		return nil, err
+	}
+
 	c.cfg = cfg
 	if err = c.initDataDir(); err != nil {
 		return nil, err
@@ -131,12 +140,6 @@ func New(cfg *config.Config, accountsMap *config.AccountsMap, userPKI user_pki.U
 	if c.cfg.Logging.Level == "DEBUG" {
 		c.log.Warning("Debug logging is enabled.")
 	}
-
-	if accountsMap == nil {
-		return nil, errors.New("accountsMap cannot be nil")
-	}
-	c.accountsMap = accountsMap
-	c.userPKI = userPKI
 
 	authPk := new(eddsa.PublicKey)
 	err = authPk.FromString(c.cfg.PKI.Nonvoting.PublicKey)

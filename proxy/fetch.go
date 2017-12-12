@@ -139,9 +139,11 @@ func (f *Fetcher) processAck(id [constants.SURBIDLength]byte, payload []byte) er
 // processMessage receives a message Block, decrypts it and
 // writes it to our local bolt db for eventual processing.
 func (f *Fetcher) processMessage(payload []byte) error {
+	f.log.Debug("processMessage")
 	// XXX for now we ignore the peer identity
 	b, _, err := f.handler.Decrypt(payload)
 	if err != nil {
+		f.log.Error("decrypt failed")
 		return err
 	}
 	s := [32]byte{}
@@ -155,26 +157,33 @@ func (f *Fetcher) processMessage(payload []byte) error {
 	}
 	err = f.store.PutIngressBlock(f.Identity, &ingressBlock)
 	if err != nil {
+		f.log.Error("failed to store ingress block")
 		return err
 	}
 	ingressBlocks, blockKeys, err := f.store.GetIngressBlocks(f.Identity, b.MessageID)
 	if err != nil {
+		f.log.Error("failed to get ingress blocks")
 		return err
 	}
 	ingressBlocks = deduplicateBlocks(ingressBlocks)
 	if len(ingressBlocks) == int(b.TotalBlocks) {
 		if !validBlocks(ingressBlocks) {
+			f.log.Error("one or more blocks are invalid")
 			return errors.New("one or more blocks are invalid")
 		}
 		message, err := reassembleMessage(ingressBlocks)
 		if err != nil {
+			f.log.Error("failed to reassemble message")
 			return err
 		}
+		f.log.Debugf("RECEIVED MESSAGE %s", string(message))
 		err = f.store.PutMessage(f.Identity, message)
 		if err != nil {
+			f.log.Error("failed to store message")
 			return err
 		}
 		err = f.store.RemoveBlocks(f.Identity, blockKeys)
+		f.log.Error("failed to remove old blocks")
 		return err
 	}
 	return nil

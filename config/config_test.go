@@ -38,17 +38,28 @@ PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 [Logging]
 Level = "DEBUG"
 
+[[UserPKI]]
+  Email = "alice@acme.com"
+  PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+
+[[UserPKI]]
+  Email = "bob@nsa.gov"
+  PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+
 [[Account]]
-  Name = "Alice"
-  Provider = "Acme"
+  Name = "alice"
+  Provider = "acme.com"
+  PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 
 [[Account]]
   Name = "Carol"
   Provider = "ProviderOfNet"
+  PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 
 [[Account]]
   Name = "Eve"
   Provider = "Trustworthy"
+  PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 
 [POP3Proxy]
   Address = "127.0.0.1:9006"
