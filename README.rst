@@ -1,4 +1,8 @@
 
+.. image:: https://travis-ci.org/katzenpost/client.svg?branch=master
+  :target: https://travis-ci.org/katzenpost/client
+
+
 The Panoramix Decryption Mix Network Client Library
 ===================================================
 
