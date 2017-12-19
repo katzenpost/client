@@ -20,11 +20,14 @@ package client
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/constants"
+	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/minclient"
 	"github.com/katzenpost/minclient/block"
 	"github.com/op/go-logging"
@@ -80,11 +83,22 @@ func (i *IngressBlock) FromBytes(raw []byte) error {
 	return i.Block.FromBytes(raw[ecdh.PublicKeySize+1:])
 }
 
+// EgressBlock is all the information needed
+// to send the given payload
+type EgressBlock struct {
+	Recipient    string
+	Provider     string
+	SURBID       *[sphinxConstants.SURBIDLength]byte
+	MessageID    *[block.MessageIDLength]byte
+	ReliableSend bool
+	Payload      []byte
+}
+
 // Storage is an interface user for persisting
 // ARQ and fragmentation/reassembly state
 type Storage interface {
-	GetBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
-	PutBlock(*[block.MessageIDLength]byte, []byte) error
+	GetIngressBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
+	PutIngressBlock(*[block.MessageIDLength]byte, []byte) error
 }
 
 // MessageConsumer is an interface used for
@@ -96,25 +110,27 @@ type MessageConsumer interface {
 
 // SessionConfig is specifies the configuration for a new session
 type SessionConfig struct {
-	User             string
-	Provider         string
-	IdentityPrivKey  *ecdh.PrivateKey
-	LinkPrivKey      *ecdh.PrivateKey
-	MessageConsumer  MessageConsumer
-	Storage          Storage
-	UserKeyDiscovery UserKeyDiscovery
+	User              string
+	Provider          string
+	IdentityPrivKey   *ecdh.PrivateKey
+	LinkPrivKey       *ecdh.PrivateKey
+	MessageConsumer   MessageConsumer
+	Storage           Storage
+	UserKeyDiscovery  UserKeyDiscovery
+	PeriodicSendDelay time.Duration
 }
 
 // Session holds the client session
 type Session struct {
 	cfg             *SessionConfig
-	client          *minclient.Client
+	minclient       *minclient.Client
 	queue           chan string
 	log             *logging.Logger
-	logBackend      *log.Backend
 	messageConsumer MessageConsumer
 	connected       chan bool
 	identityPrivKey *ecdh.PrivateKey
+	surbKeyMap      map[[constants.SURBIDLength]byte][]byte
+	sendQueue       *SendQueue
 }
 
 // NewSession stablishes a session with provider using key.
@@ -138,14 +154,17 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 		OnMessageFn: session.onMessage,
 		OnACKFn:     session.onACK,
 	}
+	session.cfg = cfg
 	session.identityPrivKey = cfg.IdentityPrivKey
 	session.connected = make(chan bool, 0)
 	session.messageConsumer = cfg.MessageConsumer
-	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
-	session.client, err = minclient.New(clientCfg)
+	session.log = c.cfg.LogBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
+	session.surbKeyMap = make(map[[constants.SURBIDLength]byte][]byte)
+	session.minclient, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
+	session.sendQueue = NewSendQueue(c.cfg.LogBackend, fmt.Sprintf("%s@%s", cfg.User, cfg.Provider), cfg.Storage, cfg.PeriodicSendDelay, minclient)
 	err = session.waitForConnection()
 	if err != nil {
 		return nil, err
@@ -155,7 +174,7 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 
 // Shutdown the session
 func (s *Session) Shutdown() {
-	s.client.Shutdown()
+	s.minclient.Shutdown()
 }
 
 // waitForConnection blocks until the client is
@@ -172,7 +191,36 @@ func (s *Session) waitForConnection() error {
 // on the destination provider or returns an error
 func (s *Session) Send(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
 	s.log.Debugf("Send")
-	return nil, errors.New("failure: Send is not yet implemented")
+	messageID := [block.MessageIDLength]byte{}
+	_, err := rand.Reader.Read(messageID[:])
+	if err != nil {
+		return err
+	}
+	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(recipient)
+	if err != nil {
+		return err
+	}
+	blocks, err := block.EncryptMessage(&messageID, message, s.identityPrivKey, recipientPubKey)
+	if err != nil {
+		return err
+	}
+	for blockID, block := range blocks {
+		egressBlock := EgressBlock{
+			Recipient:    recipient,
+			Provider:     provider,
+			SURBID:       nil,
+			BlockID:      blockID,
+			Payload:      block,
+			ReliableSend: true,
+			MessageID:    messageID,
+		}
+		err := s.cfg.Storage.PutEgressBlock(messageID, egressBlock) // XXX must serialize first
+		if err != nil {
+			s.log.Errorf("failure: egress storage error: %s", err)
+		}
+		s.sendQueue.Enqueue(&egressBlock)
+	}
+	return &messageID, nil
 }
 
 // SendUnreliable unreliably sends a message to the recipient's queue
@@ -193,12 +241,19 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) err
 		return err
 	}
 	for _, block := range blocks {
-		err = s.client.SendUnreliableCiphertext(recipient, provider, block)
-		if err != nil {
-			break
+		egressBlock := EgressBlock{
+			Recipient:    recipient,
+			Provider:     provider,
+			SURBID:       nil,
+			BlockID:      blockID,
+			Payload:      block,
+			ReliableSend: false,
+			MessageID:    messageID,
 		}
+		s.cfg.Storage.PutEgressBlock(messageID, egressBlock) // XXX must serialize first
+		s.sendQueue.Enqueue(&egressBlock)
 	}
-	return err
+	return nil
 }
 
 // OnConnection will be called by the minclient api
@@ -224,7 +279,7 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 		SenderPubKey: senderPubKey,
 		Block:        rBlock,
 	}
-	rawStoredBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
+	rawStoredBlocks, err := s.cfg.Storage.GetIngressBlocks(&rBlock.MessageID)
 	if err != nil {
 		return err
 	}
@@ -244,7 +299,7 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 	}
 	message, err := reassemble(ingressBlocks)
 	if err != nil {
-		err = s.cfg.Storage.PutBlock(&ingressBlock.Block.MessageID, rawBlock)
+		err = s.cfg.Storage.PutIngressBlock(&ingressBlock.Block.MessageID, rawBlock)
 		if err != nil {
 			return err
 		}
@@ -253,9 +308,33 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 	return nil
 }
 
-// OnACK is called by the minclient api whe
-// we receive an ACK message
+// OnACK is called by our minclient instance
+// when we receive an ACK message
 func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
 	s.log.Debugf("OnACK")
+	surbKeys, ok := s.surbKeyMap[*surbid]
+	if !ok {
+		s.log.Errorf("failure: SURB key not found for received ACK")
+		return nil
+	}
+	delete(s.surbKeyMap, surbid)
+	err := s.cfg.storage.RemoveSURBKey(surbid)
+	if err != nil {
+		s.log.Errorf("failure: failure to remove SURB key: %s", err)
+		return nil
+	}
+	plaintext, err := sphinx.DecryptSURBPayload(message, surbKeys)
+	if err != nil {
+		s.log.Errorf("failure: ACK SURB replay message decrypt error: %s", err)
+		return nil
+	}
+	if !utils.CtIsZero(plaintext) {
+		s.log.Errorf("failure: decrypted ACK payload is not all 0x00")
+		return nil
+	}
+	err := s.arqScheduler.CancelRetransmission(surbid)
+	if err != nil {
+		s.log.Errorf("failure: retransmission cancellation error: %s", err)
+	}
 	return nil
 }

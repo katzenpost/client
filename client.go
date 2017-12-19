@@ -68,7 +68,6 @@ func (cfg *Config) validate() error {
 type Client struct {
 	cfg         *Config
 	log         *logging.Logger
-	logBackend  *log.Backend
 	displayName string
 }
 
