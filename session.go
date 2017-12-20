@@ -86,12 +86,15 @@ func (i *IngressBlock) FromBytes(raw []byte) error {
 // EgressBlock is all the information needed
 // to send the given payload
 type EgressBlock struct {
+	ReliableSend bool
 	Recipient    string
 	Provider     string
-	SURBID       *[sphinxConstants.SURBIDLength]byte
+	BlockID      uint16
 	MessageID    *[block.MessageIDLength]byte
-	ReliableSend bool
 	Payload      []byte
+	Expiration   time.Time
+	SURBID       *[sphinxConstants.SURBIDLength]byte
+	SURBKeys     []byte
 }
 
 // Storage is an interface user for persisting
@@ -99,13 +102,16 @@ type EgressBlock struct {
 type Storage interface {
 	GetIngressBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
 	PutIngressBlock(*[block.MessageIDLength]byte, []byte) error
+	PutEgressBlock(*[block.MessageIDLength]byte, *EgressBlock) error
+	AddSURBKeys(*[constants.SURBIDLength]byte, *EgressBlock) error
+	RemoveSURBKey(*[constants.SURBIDLength]byte) error
 }
 
 // MessageConsumer is an interface used for
 // processing received messages
 type MessageConsumer interface {
 	ReceivedMessage(senderPubKey *ecdh.PublicKey, message []byte)
-	ReceivedACK(messageID *[block.MessageIDLength]byte, message []byte)
+	ReceivedACK(messageID *[block.MessageIDLength]byte)
 }
 
 // SessionConfig is specifies the configuration for a new session
@@ -131,6 +137,7 @@ type Session struct {
 	identityPrivKey *ecdh.PrivateKey
 	surbKeyMap      map[[constants.SURBIDLength]byte][]byte
 	sendQueue       *SendQueue
+	arqScheduler    *ARQScheduler
 }
 
 // NewSession stablishes a session with provider using key.
@@ -148,7 +155,7 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 		User:        cfg.User,
 		Provider:    cfg.Provider,
 		LinkKey:     cfg.LinkPrivKey,
-		LogBackend:  c.logBackend,
+		LogBackend:  c.cfg.LogBackend,
 		PKIClient:   c.cfg.PKIClient,
 		OnConnFn:    session.onConnection,
 		OnMessageFn: session.onMessage,
@@ -164,7 +171,8 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	session.sendQueue = NewSendQueue(c.cfg.LogBackend, fmt.Sprintf("%s@%s", cfg.User, cfg.Provider), cfg.Storage, cfg.PeriodicSendDelay, minclient)
+	session.sendQueue = NewSendQueue(c.cfg.LogBackend, fmt.Sprintf("%s@%s", cfg.User, cfg.Provider), cfg.Storage, cfg.PeriodicSendDelay, session.minclient, session)
+	session.arqScheduler = session.sendQueue.arqScheduler
 	err = session.waitForConnection()
 	if err != nil {
 		return nil, err
@@ -194,27 +202,27 @@ func (s *Session) Send(recipient, provider string, message []byte) (*[block.Mess
 	messageID := [block.MessageIDLength]byte{}
 	_, err := rand.Reader.Read(messageID[:])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(recipient)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	blocks, err := block.EncryptMessage(&messageID, message, s.identityPrivKey, recipientPubKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for blockID, block := range blocks {
 		egressBlock := EgressBlock{
 			Recipient:    recipient,
 			Provider:     provider,
 			SURBID:       nil,
-			BlockID:      blockID,
+			BlockID:      uint16(blockID),
 			Payload:      block,
 			ReliableSend: true,
-			MessageID:    messageID,
+			MessageID:    &messageID,
 		}
-		err := s.cfg.Storage.PutEgressBlock(messageID, egressBlock) // XXX must serialize first
+		err := s.cfg.Storage.PutEgressBlock(&messageID, &egressBlock) // XXX must serialize first
 		if err != nil {
 			s.log.Errorf("failure: egress storage error: %s", err)
 		}
@@ -232,25 +240,29 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) err
 	if err != nil {
 		return err
 	}
-	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(recipient)
+	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(fmt.Sprintf("%s@%s", recipient, provider))
 	if err != nil {
 		return err
 	}
+	if recipientPubKey == nil {
+		return errors.New("nil recipient key")
+	}
+	s.log.Debugf("recipient key: %s\n", recipientPubKey)
 	blocks, err := block.EncryptMessage(&messageID, message, s.identityPrivKey, recipientPubKey)
 	if err != nil {
 		return err
 	}
-	for _, block := range blocks {
+	for blockID, block := range blocks {
 		egressBlock := EgressBlock{
 			Recipient:    recipient,
 			Provider:     provider,
 			SURBID:       nil,
-			BlockID:      blockID,
+			BlockID:      uint16(blockID),
 			Payload:      block,
 			ReliableSend: false,
-			MessageID:    messageID,
+			MessageID:    &messageID,
 		}
-		s.cfg.Storage.PutEgressBlock(messageID, egressBlock) // XXX must serialize first
+		s.cfg.Storage.PutEgressBlock(&messageID, &egressBlock) // XXX must serialize first
 		s.sendQueue.Enqueue(&egressBlock)
 	}
 	return nil
@@ -308,6 +320,16 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 	return nil
 }
 
+func (s *Session) AddSURBKeys(surbid *[constants.SURBIDLength]byte, surbKeyManifest *EgressBlock) error {
+	_, ok := s.surbKeyMap[*surbKeyManifest.SURBID]
+	if ok {
+		s.log.Error("failure: SURB ID already present in surbKeyMap")
+		return errors.New("failure: SURB ID already present in surbKeyMap")
+	}
+	s.surbKeyMap[*surbid] = surbKeyManifest.SURBKeys
+	return s.cfg.Storage.AddSURBKeys(surbid, surbKeyManifest)
+}
+
 // OnACK is called by our minclient instance
 // when we receive an ACK message
 func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
@@ -317,8 +339,8 @@ func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) er
 		s.log.Errorf("failure: SURB key not found for received ACK")
 		return nil
 	}
-	delete(s.surbKeyMap, surbid)
-	err := s.cfg.storage.RemoveSURBKey(surbid)
+	delete(s.surbKeyMap, *surbid)
+	err := s.cfg.Storage.RemoveSURBKey(surbid)
 	if err != nil {
 		s.log.Errorf("failure: failure to remove SURB key: %s", err)
 		return nil
@@ -332,7 +354,7 @@ func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) er
 		s.log.Errorf("failure: decrypted ACK payload is not all 0x00")
 		return nil
 	}
-	err := s.arqScheduler.CancelRetransmission(surbid)
+	err = s.arqScheduler.CancelRetransmission(surbid)
 	if err != nil {
 		s.log.Errorf("failure: retransmission cancellation error: %s", err)
 	}

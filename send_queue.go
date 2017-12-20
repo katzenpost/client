@@ -28,6 +28,8 @@ import (
 	lane "gopkg.in/oleiade/lane.v1"
 )
 
+const RTTSlop = time.Second * 30
+
 // SendQueue
 type SendQueue struct {
 	worker.Worker
@@ -37,9 +39,10 @@ type SendQueue struct {
 	sendDelay    time.Duration
 	arqScheduler *ARQScheduler
 	minclient    *minclient.Client
+	session      *Session
 }
 
-func NewSendQueue(logBackend *log.Backend, name string, storage Storage, sendDelay time.Duration, mclient *minclient.Client) *SendQueue {
+func NewSendQueue(logBackend *log.Backend, name string, storage Storage, sendDelay time.Duration, mclient *minclient.Client, session *Session) *SendQueue {
 	s := SendQueue{
 		log:       logBackend.GetLogger(fmt.Sprintf("SendQueue_%s", name)),
 		queue:     lane.NewQueue(),
@@ -59,6 +62,8 @@ func (s *SendQueue) Start() {
 func (s *SendQueue) sendWorker() {
 	var err error
 	var doSend bool
+	var surbKeys []byte
+	var rtt time.Duration
 
 	s.log.Debug("sendWorker")
 	for {
@@ -83,14 +88,24 @@ func (s *SendQueue) sendWorker() {
 			}
 			if egressBlock.ReliableSend {
 				surbKeys, rtt, err = s.minclient.SendCiphertext(egressBlock.Recipient, egressBlock.Provider, egressBlock.SURBID, egressBlock.Payload)
+				if err != nil {
+					s.log.Errorf("minclient.SendCiphertext failure: %s", err)
+				} else {
+					manifest := EgressBlock{
+						SURBID:     egressBlock.SURBID,
+						Expiration: time.Now().Add(rtt + RTTSlop), // XXX correcto?
+						SURBKeys:   surbKeys,
+					}
+					s.session.AddSURBKeys(egressBlock.SURBID, &manifest)
+				}
 				// schedule a retransmission
-				// XXX nope it should instead be rtt + s.retrieveInterval
-				s.arqScheduler.ScheduleSend(rtt+s.sendDelay, egressBlock)
+				// XXX FIX ME: rtt + s.retrieveInterval
+				s.arqScheduler.ScheduleSend(rtt+s.sendDelay, &egressBlock)
 			} else {
 				err = s.minclient.SendUnreliableCiphertext(egressBlock.Recipient, egressBlock.Provider, egressBlock.Payload)
-			}
-			if err != nil {
-				s.log.Errorf("minclient send failure: %s", err)
+				if err != nil {
+					s.log.Errorf("minclient.SendUnreliableCiphertext failure: %s", err)
+				}
 			}
 		}
 	}
