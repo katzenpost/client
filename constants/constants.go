@@ -1,4 +1,4 @@
-// utils.go
+// constants.go - mixnet client constants
 // Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,29 +14,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package client
+package constants
 
-import (
-	"github.com/katzenpost/core/pki"
+const (
+	// MessageIDLength is the length of a message ID in bytes.
+	MessageIDLength = 16
 )
-
-type ServiceDescriptor struct {
-	Name     string
-	Provider string
-}
-
-func FindServices(capability string, doc *pki.Document) []ServiceDescriptor {
-	services := []ServiceDescriptor{}
-	for _, provider := range doc.Providers {
-		for cap, _ := range provider.Kaetzchen {
-			if cap == capability {
-				serviceId := ServiceDescriptor{
-					Name:     provider.Kaetzchen[cap]["endpoint"].(string),
-					Provider: provider.Name,
-				}
-				services = append(services, serviceId)
-			}
-		}
-	}
-	return services
-}
