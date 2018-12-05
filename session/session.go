@@ -217,6 +217,15 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
 }
 
+// GetPKI returns the current PKI document.
+func (s *Session) GetPKI() (*pki.Document, error) {
+	doc := s.minclient.CurrentDocument()
+	if doc == nil {
+		return nil, errors.New("pki doc is nil")
+	}
+	return doc, nil
+}
+
 // OnConnection will be called by the minclient api
 // upon connecting to the Provider
 func (s *Session) onConnection(err error) {
