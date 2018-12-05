@@ -19,7 +19,6 @@ package session
 import (
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	cConstants "github.com/katzenpost/client/constants"
@@ -68,10 +67,9 @@ type MessageRef struct {
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgRef *MessageRef) []byte {
 	s.mapLock.Lock()
-	replyLock := s.replyNotifyMap[*msgRef.ID]
+	replyCh := s.replyNotifyMap[*msgRef.ID]
 	s.mapLock.Unlock()
-	replyLock.Lock()
-	return s.messageIDMap[*msgRef.ID].Reply
+	return <-replyCh
 }
 
 func (s *Session) sendNext() error {
@@ -167,14 +165,14 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*M
 }
 
 // SendKaetzchenQuery sends a mixnet provider-side service query.
-func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, error) {
+func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, chan []byte, error) {
 	if provider == "" {
 		panic("wtf")
 	}
 	// Ensure the request message is under the maximum for a single
 	// packet, and pad out the message so that it is the correct size.
 	if len(message) > constants.UserForwardPayloadLength {
-		return nil, fmt.Errorf("invalid message size: %v", len(message))
+		return nil, nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	copy(payload, message)
@@ -189,15 +187,14 @@ func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte,
 		SURBType:  cConstants.SurbTypeKaetzchen,
 	}
 
+	replyCh := make(chan []byte, 1) // only 1 reply allowed; do not block on reader
 	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
-
-	s.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
-	s.replyNotifyMap[*msgRef.ID].Lock()
+	s.replyNotifyMap[*msgRef.ID] = replyCh
+	s.mapLock.Unlock()
 
 	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
-
 	err := s.egressQueue.Push(&msgRef)
-	return &msgRef, err
+	s.egressQueueLock.Unlock()
+
+	return &msgRef, replyCh, err
 }

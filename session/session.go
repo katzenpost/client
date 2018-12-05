@@ -17,6 +17,7 @@
 package session
 
 import (
+	"encoding/binary"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -41,7 +42,17 @@ import (
 	cutils "github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
+	"github.com/katzenpost/noise"
 	"gopkg.in/op/go-logging.v1"
+)
+
+const (
+	maxMsgLen = 1048576
+	macLen    = 16
+)
+
+var (
+	errMsgSize              = errors.New("client/session: invalid message size")
 )
 
 // Session is the struct type that keeps state for a given session.
@@ -67,6 +78,7 @@ type Session struct {
 
 	linkKey   *ecdh.PrivateKey
 	opCh      chan workerOp
+	Messages  map[string]chan []byte
 	onlineAt  time.Time
 	hasPKIDoc bool
 
@@ -75,9 +87,140 @@ type Session struct {
 
 	surbIDMap      map[[sConstants.SURBIDLength]byte]*MessageRef
 	messageIDMap   map[[cConstants.MessageIDLength]byte]*MessageRef
-	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
+	replyNotifyMap map[[cConstants.MessageIDLength]byte]chan []byte
 	mapLock        *sync.Mutex
+
+	// cipherstates for e2e channels
+	rxs map[string]*noise.CipherState
+	txs map[string]*noise.CipherState
 }
+
+// KatzenPeer implements Addr
+type KatzenPeer struct {
+	User string
+	Provider string
+}
+
+func (k *KatzenPeer) Network() string {
+	return "kp"
+}
+
+func (k *KatzenPeer) String() string {
+	return k.User +"@" + k.Provider
+}
+
+// KatzConn implements net.Conn
+type KatzConn struct {
+	s Session
+	lo KatzenPeer
+	ro KatzenPeer
+	closeCh chan bool
+	rbuf []byte
+}
+
+// Read reads data from the connection.
+func (k* KatzConn) Read(b []byte) (int, error) {
+	if k.rbuf == nil {
+		if _, ok := k.s.Messages[k.ro.String()]; ok {
+			// XXX: timeouts could go here
+			k.rbuf = <-k.s.Messages[k.ro.String()]
+			if k.rbuf == nil {
+				return 0, errors.New("Channel closed without read")
+			}
+		}
+		return 0, errors.New("No remote peer")
+	}
+	switch  {
+	case len(b) <= len(k.rbuf):
+		l := copy(b, k.rbuf)
+		k.rbuf = k.rbuf[len(b):]
+		return l, nil
+	case len(b) > len(k.rbuf):
+		l := copy(b, k.rbuf)
+		k.rbuf = nil
+		return l, nil
+	}
+	// NOTREACHED
+	return 0, errors.New("Golang doesn't do math")
+}
+
+// Write writes data to the connection.
+func (k* KatzConn) Write(b []byte) (int, error) {
+	switch {
+	case len(b) > maxMsgLen:
+		// loop and loop some more
+		i := 0
+		for i < len(b) {
+			n := min(maxMsgLen, len(b) - i)
+			bla := b[i:i+n]
+			if err := k.s.minclient.SendUnreliableCiphertext(k.ro.User, k.ro.Provider, bla); err != nil {
+				return i, errors.New("Failed sending to peer")
+			}
+			i += n
+		}
+		return i, nil
+
+	case len(b) <= maxMsgLen:
+		// XXX: padding or wat
+		if err := k.s.minclient.SendUnreliableCiphertext(k.ro.User, k.ro.Provider, b); err != nil {
+			return 0, err
+		}
+	}
+	// NOTREACHED
+	return 0, errors.New("Golang doesn't do math")
+}
+
+// Close closes the connection.
+func (k* KatzConn) Close() error {
+        // Any blocked Read or Write operations will be unblocked and return errors.
+	return nil
+}
+
+// LocalAddr returns the local network address.
+func (k* KatzConn) LocalAddr() KatzenPeer {
+	return k.lo
+}
+
+// RemoteAddr returns the remote network address.
+func (k* KatzConn) RemoteAddr() KatzenPeer {
+	return k.ro
+}
+
+// SetDeadline sets the read and write deadlines associated with the connection.
+func (k* KatzConn) SetDeadline(t time.Time) error {
+	// NotImplemented
+	return nil
+}
+
+// SetReadDeadline sets the deadline for future Read calls
+func (k* KatzConn) SetReadDeadline(t time.Time) error {
+	// NotImplemented
+	return nil
+}
+
+// SetWriteDeadline sets the deadline for future Write calls
+func (k* KatzConn) SetWriteDeadline(t time.Time) error {
+	// NotImplemented
+	return nil
+}
+
+/*
+// NewNoiseChannel does a e2e noise handshake with remote peer
+func (s *Session) NewNoiseChannel(uID string) (chan []byte, chan []byte, error) {
+	// should create some type to keep track of this...
+	// get the peers long term identity key from somewhere
+	// initialize()
+	// handshake()
+	prologue := []byte{0x00}
+	dhKey := noise.DHKey{
+		Private: s.authenticationKey.Bytes(),
+		Public:  s.authenticationKey.PublicKey().Bytes(),
+	}
+
+	// finalizeHandshake()
+	return nil, nil, fmt.Errorf("Handshaking with %s failed", uID)
+}
+*/
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
@@ -112,7 +255,8 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	// XXX todo: replace all this with persistent data store
 	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*MessageRef)
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
-	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
+	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte] chan []byte)
+	s.Messages = make(map[string]chan []byte) // per recipient inbound messages
 	s.mapLock = new(sync.Mutex)
 
 	s.egressQueue = new(Queue)
@@ -238,9 +382,28 @@ func (s *Session) onConnection(err error) {
 
 // OnMessage will be called by the minclient api
 // upon receiving a message
-func (s *Session) onMessage(ciphertextBlock []byte) error {
+func (s *Session) onMessage(ct []byte) error {
 	s.log.Debugf("OnMessage")
-	return nil
+	// trial decrypt with each of our noise sessions.
+	for uID, rx := range s.rxs {
+		ctHdr, err := rx.Decrypt(nil, nil, ct[:macLen+4])
+		if err != nil {
+			continue // try another
+		}
+		s.log.Debugf("Got message for %s", uID)
+		ctLen := binary.BigEndian.Uint32(ctHdr[:])
+		if ctLen < macLen || ctLen > maxMsgLen {
+			return errMsgSize
+		}
+		pt, err := rx.Decrypt(nil, nil, ct[macLen+4:])
+		if err != nil {
+			return err
+		}
+		s.Messages[uID] <- pt
+		// rekey every message? hm. does this do another handshake or is it cleverer?
+		rx.Rekey()
+	}
+	return errors.New("Failed to decrypt message")
 }
 
 // OnACK is called by the minclient api whe
@@ -257,7 +420,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Debug("wtf, received reply with unexpected SURBID")
 		return nil
 	}
-	_, ok = s.replyNotifyMap[*msgRef.ID]
+	replyCh, ok := s.replyNotifyMap[*msgRef.ID]
 	if !ok {
 		s.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(s.replyNotifyMap))
 		for key := range s.replyNotifyMap {
@@ -265,6 +428,8 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		}
 		return nil
 	}
+	defer close(replyCh)
+	defer delete(s.replyNotifyMap, *msgRef.ID)
 
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msgRef.Key)
 	if err != nil {
@@ -278,10 +443,9 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 
 	switch msgRef.SURBType {
 	case cConstants.SurbTypeACK:
-		// XXX TODO fix me
+		// XXX: could have seperate ACK chan map, but why?
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		msgRef.Reply = plaintext[2:]
-		s.replyNotifyMap[*msgRef.ID].Unlock()
+		replyCh <- plaintext[2:] // send reply
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msgRef.SURBType)
 	}
@@ -294,4 +458,11 @@ func (s *Session) onDocument(doc *pki.Document) {
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
+}
+
+func min(a, b int) int {
+        if a < b {
+                return a
+        }
+        return b
 }
