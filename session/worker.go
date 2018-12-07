@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/core/pki"
 )

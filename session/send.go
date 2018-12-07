@@ -108,7 +108,7 @@ func (s *Session) send(msgRef *MessageRef) error {
 		msgRef.NumTransmits++
 		msgRef.Key = key
 		msgRef.SentAt = time.Now()
-		msgRef.ReplyETA = eta
+		msgRef.ReplyETA = eta * time.Duration(msgRef.NumTransmits)
 
 		s.mapLock.Lock()
 		defer s.mapLock.Unlock()
