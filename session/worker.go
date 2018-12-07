@@ -100,6 +100,9 @@ func (s *Session) worker() {
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
 			return
+		case <-s.doRetx():
+			s.log.Debugf("Handling retransmissions.")
+			return
 		case <-s.pTimer.Timer.C:
 			lambdaPFired = true
 		case qo = <-s.opCh:
@@ -131,6 +134,26 @@ func (s *Session) worker() {
 	}
 
 	// NOTREACHED
+}
+
+func (s *Session) doRetx() <-chan time.Time {
+	s.mapLock.Lock()
+	var nextEta time.Duration
+	nextEta = time.Minute
+	for surbID, msgRef := range s.surbIDMap {
+		if time.Now().After(msgRef.SentAt.Add(msgRef.ReplyETA)) {
+			delete(s.surbIDMap, surbID) // inside of loop?
+			s.egressQueueLock.Lock()
+			s.egressQueue.Push(msgRef)
+			s.egressQueueLock.Unlock()
+		} else {
+			if msgRef.ReplyETA < nextEta {
+				nextEta = msgRef.ReplyETA
+			}
+		}
+	}
+	s.mapLock.Unlock()
+	return time.After(nextEta)
 }
 
 func (s *Session) lambdaPTask() {

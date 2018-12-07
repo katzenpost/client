@@ -146,6 +146,27 @@ func (s *Session) sendLoop(withSURB bool) error {
 	return s.send(msgRef)
 }
 
+// SendReliable sends a message with automatic retransmission.
+func (s *Session) SendReliable(recipient, provider string, message []byte) (*MessageRef, error) {
+	s.log.Debugf("SendReliable")
+	id := [cConstants.MessageIDLength]byte{}
+	io.ReadFull(rand.Reader, id[:])
+
+	var msgRef = MessageRef{
+		ID:        &id,
+		Recipient: recipient,
+		Provider:  provider,
+		Payload:   message,
+		WithSURB:  true,
+	}
+
+	s.egressQueueLock.Lock()
+	defer s.egressQueueLock.Unlock()
+
+	err := s.egressQueue.Push(&msgRef)
+	return &msgRef, err
+}
+
 // SendUnreliable send a message without any automatic retransmission.
 func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*MessageRef, error) {
 	s.log.Debugf("Send")
