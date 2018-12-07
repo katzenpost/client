@@ -63,6 +63,9 @@ type MessageRef struct {
 
 	// SURBType is the SURB type.
 	SURBType int
+
+	// NumTransmits is the number of times this message has been transmitted.
+	NumTransmits int
 }
 
 // WaitForReply blocks until a reply is received.
@@ -102,6 +105,7 @@ func (s *Session) send(msgRef *MessageRef) error {
 		if err != nil {
 			return err
 		}
+		msgRef.NumTransmits++
 		msgRef.Key = key
 		msgRef.SentAt = time.Now()
 		msgRef.ReplyETA = eta

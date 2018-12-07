@@ -143,9 +143,11 @@ func (s *Session) doRetx() <-chan time.Time {
 	for surbID, msgRef := range s.surbIDMap {
 		if time.Now().After(msgRef.SentAt.Add(msgRef.ReplyETA)) {
 			delete(s.surbIDMap, surbID) // inside of loop?
-			s.egressQueueLock.Lock()
-			s.egressQueue.Push(msgRef)
-			s.egressQueueLock.Unlock()
+			if msgRef.NumTransmits < cConstants.MaxTransmits {
+				s.egressQueueLock.Lock()
+				s.egressQueue.Push(msgRef)
+				s.egressQueueLock.Unlock()
+			}
 		} else {
 			if msgRef.ReplyETA < nextEta {
 				nextEta = msgRef.ReplyETA

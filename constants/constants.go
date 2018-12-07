@@ -30,4 +30,7 @@ const (
 
 	// SurbTypeInternal is used to reserve an internal SURB reply type.
 	SurbTypeInternal = 2
+
+	// MaxTransmits is used to limit the number of transmission attempts.
+	MaxTransmits = 3
 )
