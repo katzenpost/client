@@ -29,13 +29,10 @@ type ARQ struct {
 	sync.Mutex
 	sync.Cond
 	worker.Worker
-	priq queue.PriorityQueue
-	s    *Session
 
-	OpCh       chan *MessageRef
-	fatalErrCh chan error
-	haltedCh   chan interface{}
-	haltOnce   sync.Once
+	priq  *queue.PriorityQueue
+	s     *Session
+	timer *time.Timer
 }
 
 func (m *MessageRef) expiry() uint64 {
@@ -47,21 +44,46 @@ func (m *MessageRef) timeLeft() time.Duration {
 	return m.SentAt.Add(m.ReplyETA).Sub(time.Now())
 }
 
-func (a *ARQ) worker() {
-	for {
-		var mo *MessageRef
-		select {
-		case <-a.HaltCh():
-			a.s.log.Debugf("Terminating gracefully")
-			return
-		case mo = <-a.opCh:
+// Enqueue adds a message to the ARQ
+func (a *ARQ) Enqueue(m *MessageRef) {
+	a.Lock()
+	defer a.Unlock()
+	a.priq.Enqueue(m.expiry(), m)
+	if a.priq.Len() == 1 {
+		a.Broadcast()
+	}
+}
+
+// NewARQ intantiates a new ARQ and starts the worker routine
+func NewARQ(s *Session) *ARQ {
+	a := &ARQ{s: s, priq: queue.New()}
+	a.Go(a.worker)
+	return a
+}
+
+// Remove removes a MessageRef from the ARQ
+func (a *ARQ) Remove(m *MessageRef) {
+	a.Lock()
+	defer a.Unlock()
+	// If the item to be removed is the first element, stop the timer and schedule a new one.
+	if mo := a.priq.Peek(); mo != nil {
+		if mo.Value.(*MessageRef) == m {
+			a.timer.Stop()
+			a.priq.Pop()
+			if a.priq.Len() > 0 {
+				a.Broadcast()
+			}
 		}
-		a.Lock()
-		a.priq.Enqueue(mo.expiry(), mo)
-		if a.priq.Len() == 1 {
-			a.Broadcast()
+	} else {
+		mo := a.priq.Remove(m.expiry())
+		switch mo {
+		case m:
+		case nil:
+			a.s.log.Debugf("Failed to remove %v from queue, already gone", m)
+		default:
+			a.s.log.Errorf("Removed wrong item from queue! Re-enqueuing")
+			defer a.Enqueue(mo.(*MessageRef))
 		}
-		a.Unlock()
 	}
 }
 
@@ -76,7 +98,6 @@ func (a *ARQ) wakeupCh() chan struct{} {
 
 func (a *ARQ) reschedule() {
 	a.Lock()
-	// XXX: check to see if this has been ACK'd already!
 	m := a.priq.Pop()
 	a.Unlock()
 	if m == nil {
@@ -87,19 +108,19 @@ func (a *ARQ) reschedule() {
 	a.s.egressQueueLock.Unlock()
 }
 
-func (a *ARQ) tworker() {
+func (a *ARQ) worker() {
 	for {
-		var t <-chan time.Time
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
-			t = time.After(m.Value.(*MessageRef).timeLeft())
+			a.timer = time.NewTimer(m.Value.(*MessageRef).timeLeft())
 		}
 		a.Unlock()
 		select {
 		case <-a.s.HaltCh():
+			a.timer.Stop()
 			a.s.log.Debugf("Terminating gracefully")
 			return
-		case <-t:
+		case <-a.timer.C:
 			a.reschedule()
 		case <-a.wakeupCh():
 		}

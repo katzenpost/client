@@ -48,6 +48,7 @@ import (
 type Session struct {
 	worker.Worker
 
+	arq       *ARQ
 	cfg       *config.Config
 	pkiClient pki.Client
 	minclient *minclient.Client
@@ -159,6 +160,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	}
 	s.setTimers(doc)
 
+	s.arq = NewARQ(s)
 	s.Go(s.worker)
 	return s, nil
 }
@@ -269,7 +271,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 
 	switch msgRef.SURBType {
 	case cConstants.SurbTypeACK:
-		// XXX TODO fix me
+		s.arq.Remove(msgRef)
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		msgRef.Reply = plaintext[2:]
 		s.replyNotifyMap[*msgRef.ID].Unlock()
