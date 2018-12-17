@@ -31,9 +31,9 @@ type ARQ struct {
 	sync.Cond
 	worker.Worker
 
-	priq  *queue.PriorityQueue
-	s     *Session
-	timer *time.Timer
+	priq   *queue.PriorityQueue
+	s      *Session
+	timer  *time.Timer
 	wakech chan struct{}
 }
 

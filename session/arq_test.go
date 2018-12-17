@@ -1,14 +1,14 @@
 package session
 
 import (
+	"github.com/stretchr/testify/assert"
+	"io"
+	"sync"
 	"testing"
 	"time"
-	"io"
-	"github.com/stretchr/testify/assert"
-	"sync"
 	//"github.com/stretchr/testify/assert"
-	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/log"
 )
 
 func TestNewARQ(t *testing.T) {
@@ -25,7 +25,7 @@ func TestNewARQ(t *testing.T) {
 	s.egressQueueLock = new(sync.Mutex)
 
 	a := NewARQ(s)
-	for i := 0; i< 10; i++ {
+	for i := 0; i < 10; i++ {
 		m := &MessageRef{}
 		m.ID = new([16]byte)
 
@@ -53,7 +53,7 @@ func TestNewARQ(t *testing.T) {
 	assert.Equal(j, 10)
 	s.egressQueueLock.Unlock()
 
-	for i := 0; i< 10; i++ {
+	for i := 0; i < 10; i++ {
 		m := &MessageRef{}
 		m.ID = new([16]byte)
 
@@ -62,7 +62,7 @@ func TestNewARQ(t *testing.T) {
 		io.ReadFull(rand.Reader, m.ID[:])
 		a.Enqueue(m)
 		time.Sleep(20 * time.Millisecond)
-		if i %2 == 0 {
+		if i%2 == 0 {
 			m.Reply = []byte("A")
 			//er := a.Remove(m)
 			//assert.NoError(er)
