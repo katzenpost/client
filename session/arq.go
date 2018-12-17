@@ -112,11 +112,15 @@ func (a *ARQ) reschedule() {
 	if m == nil {
 		panic("We've done something wrong here...")
 	}
+	// XXX should lock m
+	if len(m.Value.(*MessageRef).Reply) > 0 {
+		// Already ACK'd
+		return
+	}
 	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*MessageRef).ID)
 	a.s.egressQueueLock.Lock()
 	a.s.egressQueue.Push(m.Value.(*MessageRef))
 	a.s.egressQueueLock.Unlock()
-	a.s.log.Debugf("Rescheduled msg[%d]", m.Value.(*MessageRef).ID)
 }
 
 func (a *ARQ) worker() {
@@ -126,9 +130,17 @@ func (a *ARQ) worker() {
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
 			msg := m.Value.(*MessageRef)
-			a.s.log.Debugf("Setting timer for msg[%d]: %d", msg.ID, msg.timeLeft())
-			a.timer = time.NewTimer(msg.timeLeft())
-			c = a.timer.C
+			tl := msg.timeLeft()
+			if tl < 0 {
+				a.s.log.Debugf("Queue behind schedule %v", tl)
+				a.Unlock()
+				a.reschedule()
+				continue
+			} else {
+				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
+				a.timer = time.NewTimer(tl)
+				c = a.timer.C
+			}
 		} else {
 			a.s.log.Debug("Nothing in priq")
 		}
@@ -142,7 +154,7 @@ func (a *ARQ) worker() {
 			a.reschedule()
 		case <-a.wakeupCh():
 			a.s.log.Debugf("Woke")
-			a.timer.Stop() // 
+			a.timer.Stop() // Enqueue may add item with higher priority than current timer
 		}
 	}
 }
