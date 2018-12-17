@@ -50,8 +50,8 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 	a.s.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
 	a.priq.Enqueue(m.expiry(), m)
-	a.Signal()
 	a.Unlock()
+	a.Broadcast()
 }
 
 // NewARQ intantiates a new ARQ and starts the worker routine
@@ -73,7 +73,7 @@ func (a *ARQ) Remove(m *MessageRef) error {
 			a.timer.Stop()
 			a.priq.Pop()
 			if a.priq.Len() > 0 {
-				a.Signal()
+				a.Broadcast()
 			}
 		}
 	} else {
