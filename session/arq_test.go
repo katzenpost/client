@@ -34,8 +34,9 @@ func TestNewARQ(t *testing.T) {
 		a.Enqueue(m)
 	}
 	j := 0
-	for err, i := s.egressQueue.Pop(); err ==nil && i != nil; j++ {
+	for err, i := s.egressQueue.Pop(); err == nil && i != nil; j++ {
 	}
+	a.Unlock()
 	assert.Equal(j, 10)
 
 	for i := 0; i< 10; i++ {
@@ -48,7 +49,8 @@ func TestNewARQ(t *testing.T) {
 		a.Enqueue(m)
 		time.Sleep(20 * time.Millisecond)
 		if i %2 == 0 {
-			a.Remove(m)
+			er := a.Remove(m)
+			assert.NoError(er)
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
@@ -63,5 +65,4 @@ func TestNewARQ(t *testing.T) {
 		}
 	}
 	assert.Equal(j, 5)
-
 }

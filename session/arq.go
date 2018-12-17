@@ -17,6 +17,7 @@
 package session
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ func NewARQ(s *Session) *ARQ {
 }
 
 // Remove removes a MessageRef from the ARQ
-func (a *ARQ) Remove(m *MessageRef) {
+func (a *ARQ) Remove(m *MessageRef) error {
 	a.Lock()
 	defer a.Unlock()
 	// If the item to be removed is the first element, stop the timer and schedule a new one.
@@ -84,8 +85,10 @@ func (a *ARQ) Remove(m *MessageRef) {
 		default:
 			a.s.log.Errorf("Removed wrong item from queue! Re-enqueuing")
 			defer a.Enqueue(mo.(*MessageRef))
+			return fmt.Errorf("Failed to remove %v", m)
 		}
 	}
+	return nil
 }
 
 func (a *ARQ) wakeupCh() chan struct{} {
