@@ -160,8 +160,8 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	}
 	s.setTimers(doc)
 
-	s.arq = NewARQ(s)
 	s.Go(s.worker)
+	s.arq = NewARQ(s)
 	return s, nil
 }
 

@@ -46,17 +46,17 @@ func (m *MessageRef) timeLeft() time.Duration {
 
 // Enqueue adds a message to the ARQ
 func (a *ARQ) Enqueue(m *MessageRef) {
+	a.s.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
-	defer a.Unlock()
 	a.priq.Enqueue(m.expiry(), m)
-	if a.priq.Len() == 1 {
-		a.Broadcast()
-	}
+	a.Signal()
+	a.Unlock()
 }
 
 // NewARQ intantiates a new ARQ and starts the worker routine
 func NewARQ(s *Session) *ARQ {
 	a := &ARQ{s: s, priq: queue.New()}
+	a.L = new(sync.Mutex)
 	a.Go(a.worker)
 	return a
 }
@@ -67,11 +67,12 @@ func (a *ARQ) Remove(m *MessageRef) {
 	defer a.Unlock()
 	// If the item to be removed is the first element, stop the timer and schedule a new one.
 	if mo := a.priq.Peek(); mo != nil {
+		a.s.log.Debugf("Removing message")
 		if mo.Value.(*MessageRef) == m {
 			a.timer.Stop()
 			a.priq.Pop()
 			if a.priq.Len() > 0 {
-				a.Broadcast()
+				a.Signal()
 			}
 		}
 	} else {
@@ -88,31 +89,45 @@ func (a *ARQ) Remove(m *MessageRef) {
 }
 
 func (a *ARQ) wakeupCh() chan struct{} {
+	a.s.log.Debug("wakeupCh()")
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
+		a.L.Lock()
 		a.Wait()
+		a.s.log.Debug("wakeup")
+		a.L.Unlock()
 	}()
 	return c
 }
 
 func (a *ARQ) reschedule() {
+	a.s.log.Debugf("Timer fired at %s", time.Now())
 	a.Lock()
 	m := a.priq.Pop()
 	a.Unlock()
 	if m == nil {
 		panic("We've done something wrong here...")
 	}
+	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*MessageRef).ID)
 	a.s.egressQueueLock.Lock()
 	a.s.egressQueue.Push(m.Value.(*MessageRef))
 	a.s.egressQueueLock.Unlock()
+	a.s.log.Debugf("Rescheduled msg[%d]", m.Value.(*MessageRef).ID)
 }
 
 func (a *ARQ) worker() {
 	for {
+		a.s.log.Debugf("Loop0")
+		var c <-chan time.Time
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
-			a.timer = time.NewTimer(m.Value.(*MessageRef).timeLeft())
+			msg := m.Value.(*MessageRef)
+			a.s.log.Debugf("Setting timer for msg[%d]: %d", msg.ID, msg.timeLeft())
+			a.timer = time.NewTimer(msg.timeLeft())
+			c = a.timer.C
+		} else {
+			a.s.log.Debug("Nothing in priq")
 		}
 		a.Unlock()
 		select {
@@ -120,9 +135,11 @@ func (a *ARQ) worker() {
 			a.timer.Stop()
 			a.s.log.Debugf("Terminating gracefully")
 			return
-		case <-a.timer.C:
+		case <-c:
 			a.reschedule()
 		case <-a.wakeupCh():
+			a.s.log.Debugf("Woke")
+			a.timer.Stop() // 
 		}
 	}
 }
