@@ -34,6 +34,7 @@ type ARQ struct {
 	priq  *queue.PriorityQueue
 	s     *Session
 	timer *time.Timer
+	wakech chan struct{}
 }
 
 func (m *MessageRef) expiry() uint64 {
@@ -51,7 +52,7 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 	a.Lock()
 	a.priq.Enqueue(m.expiry(), m)
 	a.Unlock()
-	a.Broadcast()
+	a.Signal()
 }
 
 // NewARQ intantiates a new ARQ and starts the worker routine
@@ -73,7 +74,7 @@ func (a *ARQ) Remove(m *MessageRef) error {
 			a.timer.Stop()
 			a.priq.Pop()
 			if a.priq.Len() > 0 {
-				a.Broadcast()
+				a.Signal()
 			}
 		}
 	} else {
@@ -93,14 +94,24 @@ func (a *ARQ) Remove(m *MessageRef) error {
 
 func (a *ARQ) wakeupCh() chan struct{} {
 	a.s.log.Debug("wakeupCh()")
+	if a.wakech != nil {
+		return a.wakech
+	}
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
-		a.L.Lock()
-		a.Wait()
-		a.s.log.Debug("wakeup")
-		a.L.Unlock()
+		for {
+			a.L.Lock()
+			a.Wait()
+			a.L.Unlock()
+			select {
+			case <-a.HaltCh():
+				return
+			case c<-*new(struct{}):
+			}
+		}
 	}()
+	a.wakech = c
 	return c
 }
 
