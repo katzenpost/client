@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
@@ -271,19 +272,39 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 
 	switch msgRef.SURBType {
 	case cConstants.SurbTypeACK:
-		s.arq.Remove(msgRef)
+		// Validate that the ACK payload is entirely '0x00'.
+		if !cutils.CtIsZero(plaintext) {
+			s.log.Warningf("Discarding SURB-ACK %v: Malformed payload.", idStr)
+			return nil
+		}
+		msgRef.Reply = plaintext[:]
+		s.replyNotifyMap[*msgRef.ID].Unlock()
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		msgRef.Reply = plaintext[2:]
 		s.replyNotifyMap[*msgRef.ID].Unlock()
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msgRef.SURBType)
 	}
+	delete(s.surbIDMap, *msgRef.SURBID)
 	return nil
+}
+
+func (s *Session) gcSURBID() {
+	ep, _, _ := epochtime.Now()
+
+	for SURBID, m := range s.surbIDMap {
+		u := uint64(m.SentAt.Unix())
+		e := epochtime.IsInEpoch
+		if !(e(ep, u) || e(ep-1, u) || e(ep-2, u)) {
+			delete(s.surbIDMap, SURBID)
+		}
+	}
 }
 
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
 	s.hasPKIDoc = true
+	s.gcSURBID()
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
