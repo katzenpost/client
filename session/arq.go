@@ -100,14 +100,17 @@ func (a *ARQ) wakeupCh() chan struct{} {
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
+		var v struct{}
 		for {
 			a.L.Lock()
 			a.Wait()
 			a.L.Unlock()
 			select {
 			case <-a.HaltCh():
+				a.s.log.Debugf("CondCh worker() returning")
 				return
-			case c<-*new(struct{}):
+			case c <- v:
+				a.s.log.Debugf("CondCh worker() writing")
 			}
 		}
 	}()
