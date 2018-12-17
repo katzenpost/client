@@ -119,8 +119,11 @@ func (a *ARQ) reschedule() {
 	}
 	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*MessageRef).ID)
 	a.s.egressQueueLock.Lock()
-	a.s.egressQueue.Push(m.Value.(*MessageRef))
+	err := a.s.egressQueue.Push(m.Value.(*MessageRef))
 	a.s.egressQueueLock.Unlock()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (a *ARQ) worker() {
