@@ -17,10 +17,12 @@
 package session
 
 import (
+	"bytes"
 	"sync"
 	"time"
 
 	"github.com/katzenpost/core/queue"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
 )
 
@@ -53,7 +55,11 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 	a.Signal()
 }
 
-func (a *ARQ) FilterOnce(filter func(value interface{}) bool) {
+func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
+	filter := func(value interface{}) bool {
+		v := value.(MessageRef)
+		return bytes.Equal(v.SURBID[:], surbID[:])
+	}
 	a.priq.FilterOnce(filter)
 }
 

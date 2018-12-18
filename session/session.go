@@ -17,7 +17,6 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -288,11 +287,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 	}
 	delete(s.surbIDMap, *msgRef.SURBID)
 
-	filter := func(value interface{}) bool {
-		v := value.(MessageRef)
-		return bytes.Equal(v.SURBID[:], surbID[:])
-	}
-	s.arq.FilterOnce(filter)
+	s.arq.Remove(*msgRef.SURBID)
 	return nil
 }
 
