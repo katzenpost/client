@@ -17,6 +17,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -286,6 +287,12 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msgRef.SURBType)
 	}
 	delete(s.surbIDMap, *msgRef.SURBID)
+
+	filter := func(value interface{}) bool {
+		v := value.(MessageRef)
+		return bytes.Equal(v.SURBID[:], surbID[:])
+	}
+	s.arq.FilterOnce(filter)
 	return nil
 }
 

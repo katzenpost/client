@@ -87,8 +87,10 @@ func (s *Session) sendNext() error {
 	s.egressQueueLock.Lock()
 	defer s.egressQueueLock.Unlock()
 
+	var err error = nil
+	var msgRef *MessageRef = nil
 	for {
-		msgRef, err := s.egressQueue.Peek()
+		msgRef, err = s.egressQueue.Peek()
 		if err != nil {
 			return err
 		}

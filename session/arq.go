@@ -17,7 +17,6 @@
 package session
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -54,33 +53,8 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 	a.Signal()
 }
 
-// Remove removes a MessageRef from the ARQ
-func (a *ARQ) Remove(m *MessageRef) error {
-	a.Lock()
-	defer a.Unlock()
-	// If the item to be removed is the first element, stop the timer and schedule a new one.
-	if mo := a.priq.Peek(); mo != nil {
-		a.s.log.Debugf("Removing message")
-		if mo.Value.(*MessageRef) == m {
-			a.timer.Stop()
-			a.priq.Pop()
-			if a.priq.Len() > 0 {
-				a.Signal()
-			}
-		}
-	} else {
-		mo := a.priq.Remove(m.expiry())
-		switch mo {
-		case m:
-		case nil:
-			a.s.log.Debugf("Failed to remove %v from queue, already gone", m)
-		default:
-			a.s.log.Errorf("Removed wrong item from queue! Re-enqueuing")
-			defer a.Enqueue(mo.(*MessageRef))
-			return fmt.Errorf("Failed to remove %v", m)
-		}
-	}
-	return nil
+func (a *ARQ) FilterOnce(filter func(value interface{}) bool) {
+	a.priq.FilterOnce(filter)
 }
 
 func (a *ARQ) wakeupCh() chan struct{} {
