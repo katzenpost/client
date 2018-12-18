@@ -65,6 +65,15 @@ type MessageRef struct {
 	SURBType int
 }
 
+func (m *MessageRef) expiry() uint64 {
+	// TODO: add exponential backoff
+	return uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
+}
+
+func (m *MessageRef) timeLeft() time.Duration {
+	return m.SentAt.Add(m.ReplyETA).Sub(time.Now())
+}
+
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgRef *MessageRef) []byte {
 	s.mapLock.Lock()
@@ -78,12 +87,14 @@ func (s *Session) sendNext() error {
 	s.egressQueueLock.Lock()
 	defer s.egressQueueLock.Unlock()
 
-	msgRef, err := s.egressQueue.Peek()
-	if err != nil {
-		return err
-	}
-	if msgRef.Provider == "" {
-		panic("wtf")
+	for {
+		msgRef, err := s.egressQueue.Peek()
+		if err != nil {
+			return err
+		}
+		if msgRef.Provider == "" {
+			panic("wtf")
+		}
 	}
 	err = s.send(msgRef)
 	if err != nil {
@@ -115,11 +126,6 @@ func (s *Session) send(msgRef *MessageRef) error {
 		err = s.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
 	}
 	return err
-}
-
-func (s *Session) sendDropDecoy() error {
-	s.log.Info("sending drop decoy")
-	return s.sendLoop(false)
 }
 
 func (s *Session) sendLoopDecoy() error {

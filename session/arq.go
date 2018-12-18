@@ -37,13 +37,12 @@ type ARQ struct {
 	wakech chan struct{}
 }
 
-func (m *MessageRef) expiry() uint64 {
-	// TODO: add exponential backoff
-	return uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
-}
-
-func (m *MessageRef) timeLeft() time.Duration {
-	return m.SentAt.Add(m.ReplyETA).Sub(time.Now())
+// NewARQ intantiates a new ARQ and starts the worker routine
+func NewARQ(s *Session) *ARQ {
+	a := &ARQ{s: s, priq: queue.New()}
+	a.L = new(sync.Mutex)
+	a.Go(a.worker)
+	return a
 }
 
 // Enqueue adds a message to the ARQ
@@ -53,14 +52,6 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 	a.priq.Enqueue(m.expiry(), m)
 	a.Unlock()
 	a.Signal()
-}
-
-// NewARQ intantiates a new ARQ and starts the worker routine
-func NewARQ(s *Session) *ARQ {
-	a := &ARQ{s: s, priq: queue.New()}
-	a.L = new(sync.Mutex)
-	a.Go(a.worker)
-	return a
 }
 
 // Remove removes a MessageRef from the ARQ
