@@ -1,5 +1,5 @@
 // queue.go - Client egress queue.
-// Copyright (C) 2018  masala.
+// Copyright (C) 2018  masala, David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/core/queue"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
@@ -34,13 +35,18 @@ type ARQ struct {
 
 	priq   *queue.PriorityQueue
 	s      *Session
-	timer  *time.Timer
 	wakech chan struct{}
+
+	clock clockwork.Clock
 }
 
 // NewARQ intantiates a new ARQ and starts the worker routine
 func NewARQ(s *Session) *ARQ {
-	a := &ARQ{s: s, priq: queue.New()}
+	a := &ARQ{
+		s:     s,
+		priq:  queue.New(),
+		clock: clockwork.NewRealClock(),
+	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
 	return a
@@ -55,6 +61,9 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 	a.Signal()
 }
 
+// Remove removes the item with the given SURB ID.
+// This assumes the priority queue values are of type
+// MessageRef.
 func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
 	filter := func(value interface{}) bool {
 		v := value.(MessageRef)
@@ -90,7 +99,7 @@ func (a *ARQ) wakeupCh() chan struct{} {
 }
 
 func (a *ARQ) reschedule() {
-	a.s.log.Debugf("Timer fired at %s", time.Now())
+	a.s.log.Debugf("Timer fired at %s", a.clock.Now())
 	a.Lock()
 	m := a.priq.Pop()
 	a.Unlock()
@@ -118,7 +127,7 @@ func (a *ARQ) worker() {
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
 			msg := m.Value.(*MessageRef)
-			tl := msg.timeLeft()
+			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
 				a.s.log.Debugf("Queue behind schedule %v", tl)
 				a.Unlock()
@@ -126,8 +135,7 @@ func (a *ARQ) worker() {
 				continue
 			} else {
 				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
-				a.timer = time.NewTimer(tl)
-				c = a.timer.C
+				c = a.clock.After(tl)
 			}
 		} else {
 			a.s.log.Debug("Nothing in priq")
@@ -135,14 +143,12 @@ func (a *ARQ) worker() {
 		a.Unlock()
 		select {
 		case <-a.s.HaltCh():
-			a.timer.Stop()
 			a.s.log.Debugf("Terminating gracefully")
 			return
 		case <-c:
 			a.reschedule()
 		case <-a.wakeupCh():
 			a.s.log.Debugf("Woke")
-			a.timer.Stop() // Enqueue may add item with higher priority than current timer
 		}
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
@@ -70,8 +71,8 @@ func (m *MessageRef) expiry() uint64 {
 	return uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
 }
 
-func (m *MessageRef) timeLeft() time.Duration {
-	return m.SentAt.Add(m.ReplyETA).Sub(time.Now())
+func (m *MessageRef) timeLeft(clock clockwork.Clock) time.Duration {
+	return m.SentAt.Add(m.ReplyETA).Sub(clock.Now())
 }
 
 // WaitForReply blocks until a reply is received.
