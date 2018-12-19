@@ -61,6 +61,9 @@ type Message struct {
 
 	// SURBType is the SURB type.
 	SURBType int
+
+	// Reliable determines whether our ARQ scheme is used.
+	Reliable bool
 }
 
 func (m *Message) expiry() uint64 {
@@ -126,6 +129,10 @@ func (s *Session) send(msg *Message) error {
 	s.surbIDMap[surbID] = msg
 	s.messageIDMap[*msg.ID] = msg
 
+	if msg.Reliable {
+		err = s.arq.Enqueue(msg)
+	}
+
 	return err
 }
 
@@ -144,13 +151,20 @@ func (s *Session) sendLoopDecoy() error {
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Payload:   payload[:],
+		Reliable:  false,
 	}
 	return s.send(msg)
 }
 
-// SendUnreliable send a message without any automatic retransmission.
-func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*Message, error) {
-	s.log.Debugf("Send")
+// SendMessage sends a message.
+func (s *Session) SendMessage(recipient, provider string, message []byte, reliable bool, query bool) (*[cConstants.MessageIDLength]byte, error) {
+	s.log.Debug("SendMessage")
+	if len(message) > constants.UserForwardPayloadLength {
+		return nil, fmt.Errorf("invalid message size: %v", len(message))
+	}
+	payload := make([]byte, constants.UserForwardPayloadLength)
+	copy(payload, message)
+
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
 	var msg = Message{
@@ -158,46 +172,29 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*M
 		Recipient: recipient,
 		Provider:  provider,
 		Payload:   message,
+		Reliable:  reliable,
+	}
+
+	if query {
+		msg.SURBType = cConstants.SurbTypeKaetzchen
+	} else {
+		msg.SURBType = cConstants.SurbTypeACK
+	}
+
+	if reliable {
+		s.mapLock.Lock()
+		defer s.mapLock.Unlock()
+		s.replyNotifyMap[*msg.ID] = new(sync.Mutex)
+		s.replyNotifyMap[*msg.ID].Lock()
 	}
 
 	s.egressQueueLock.Lock()
 	defer s.egressQueueLock.Unlock()
-
 	err := s.egressQueue.Push(&msg)
-	return &msg, err
+	return msg.ID, err
 }
 
-// SendKaetzchenQuery sends a mixnet provider-side service query.
-func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*Message, error) {
-	if provider == "" {
-		panic("wtf")
-	}
-	// Ensure the request message is under the maximum for a single
-	// packet, and pad out the message so that it is the correct size.
-	if len(message) > constants.UserForwardPayloadLength {
-		return nil, fmt.Errorf("invalid message size: %v", len(message))
-	}
-	payload := make([]byte, constants.UserForwardPayloadLength)
-	copy(payload, message)
-	id := [cConstants.MessageIDLength]byte{}
-	io.ReadFull(rand.Reader, id[:])
-	var msg = Message{
-		ID:        &id,
-		Recipient: recipient,
-		Provider:  provider,
-		Payload:   payload,
-		SURBType:  cConstants.SurbTypeKaetzchen,
-	}
-
-	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
-
-	s.replyNotifyMap[*msg.ID] = new(sync.Mutex)
-	s.replyNotifyMap[*msg.ID].Lock()
-
-	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
-
-	err := s.egressQueue.Push(&msg)
-	return &msg, err
+// SendQuery sends a mixnet provider-side service query.
+func (s *Session) SendQuery(recipient, provider string, message []byte, reliable bool) (*[cConstants.MessageIDLength]byte, error) {
+	return s.SendMessage(recipient, provider, message, reliable, true)
 }
