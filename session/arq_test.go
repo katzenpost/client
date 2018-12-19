@@ -24,17 +24,20 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
+	clog "github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/queue"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/op/go-logging.v1"
 )
 
 func NewTestARQ(s *Session) (*ARQ, clockwork.FakeClock) {
+	log := logging.MustGetLogger("arq_test")
 	fakeClock := clockwork.NewFakeClock()
 	a := &ARQ{
 		s:     s,
 		queue: queue.New(),
 		clock: fakeClock,
+		log:   log,
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
@@ -46,7 +49,7 @@ func TestNewARQ(t *testing.T) {
 
 	s := &Session{}
 
-	logBackend, err := log.New("", "DEBUG", false)
+	logBackend, err := clog.New("", "DEBUG", false)
 	assert.NoError(err)
 	s.log = logBackend.GetLogger("arq_test")
 
