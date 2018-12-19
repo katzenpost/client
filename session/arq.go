@@ -27,25 +27,28 @@ import (
 	"github.com/katzenpost/core/worker"
 )
 
-// ARQ is the struct type that keeps state for reliable message delivery
+// ARQ is the struct type that keeps state for reliable message delivery.
 type ARQ struct {
 	sync.Mutex
 	sync.Cond
 	worker.Worker
 
-	priq   *queue.PriorityQueue
-	s      *Session
-	wakech chan struct{}
+	queue *queue.PriorityQueue
+	s     *Session
+
+	wakeChan   chan struct{}
+	removeChan chan [sConstants.SURBIDLength]byte
 
 	clock clockwork.Clock
 }
 
-// NewARQ intantiates a new ARQ and starts the worker routine
+// NewARQ makes a new ARQ and starts the worker thread.
 func NewARQ(s *Session) *ARQ {
 	a := &ARQ{
-		s:     s,
-		priq:  queue.New(),
-		clock: clockwork.NewRealClock(),
+		s:          s,
+		queue:      queue.New(),
+		clock:      clockwork.NewRealClock(),
+		removeChan: make(chan [sConstants.SURBIDLength]byte),
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
@@ -56,26 +59,30 @@ func NewARQ(s *Session) *ARQ {
 func (a *ARQ) Enqueue(m *MessageRef) {
 	a.s.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
-	a.priq.Enqueue(m.expiry(), m)
+	a.queue.Enqueue(m.expiry(), m)
 	a.Unlock()
 	a.Signal()
 }
 
 // Remove removes the item with the given SURB ID.
-// This assumes the priority queue values are of type
-// MessageRef.
 func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
+	a.removeChan <- surbID
+}
+
+func (a *ARQ) remove(surbID [sConstants.SURBIDLength]byte) {
 	filter := func(value interface{}) bool {
 		v := value.(MessageRef)
 		return bytes.Equal(v.SURBID[:], surbID[:])
 	}
-	a.priq.FilterOnce(filter)
+	a.Lock()
+	a.queue.FilterOnce(filter)
+	a.Unlock()
 }
 
 func (a *ARQ) wakeupCh() chan struct{} {
 	a.s.log.Debug("wakeupCh()")
-	if a.wakech != nil {
-		return a.wakech
+	if a.wakeChan != nil {
+		return a.wakeChan
 	}
 	c := make(chan struct{})
 	go func() {
@@ -94,12 +101,12 @@ func (a *ARQ) wakeupCh() chan struct{} {
 			}
 		}
 	}()
-	a.wakech = c
+	a.wakeChan = c
 	return c
 }
 
 func (a *ARQ) pop() *MessageRef {
-	m := a.priq.Pop()
+	m := a.queue.Pop()
 	return m.Value.(*MessageRef)
 }
 
@@ -123,7 +130,7 @@ func (a *ARQ) worker() {
 		a.s.log.Debugf("Loop0")
 		var c <-chan time.Time
 		a.Lock()
-		if m := a.priq.Peek(); m != nil {
+		if m := a.queue.Peek(); m != nil {
 			msg := m.Value.(*MessageRef)
 			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
@@ -137,13 +144,16 @@ func (a *ARQ) worker() {
 				c = a.clock.After(tl)
 			}
 		} else {
-			a.s.log.Debug("Nothing in priq")
+			a.s.log.Debug("Nothing in queue")
 		}
 		a.Unlock()
 		select {
 		case <-a.s.HaltCh():
 			a.s.log.Debugf("Terminating gracefully")
 			return
+		case surbID := <-a.removeChan:
+			a.remove(surbID)
+			continue
 		case <-c:
 			a.s.log.Debugf("Timer fired at %s", a.clock.Now())
 			a.Lock()
