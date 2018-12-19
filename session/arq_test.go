@@ -53,8 +53,7 @@ func TestNewARQ(t *testing.T) {
 	assert.NoError(err)
 	s.log = logBackend.GetLogger("arq_test")
 
-	q := new(Queue)
-	s.egressQueue = q
+	s.egressQueue = new(Queue)
 	s.egressQueueLock = new(sync.Mutex)
 
 	a, fakeClock := NewTestARQ(s)
@@ -66,14 +65,15 @@ func TestNewARQ(t *testing.T) {
 		m.ReplyETA = 200 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
 		a.Enqueue(m)
-		fakeClock.Advance(1 * time.Millisecond)
+		//fakeClock.BlockUntil(1)
+		fakeClock.Advance(300 * time.Millisecond)
 	}
 	a.s.log.Debugf("Sent 10 messages")
-
+	fakeClock.BlockUntil(1)
 	fakeClock.Advance(1 * time.Second)
 
 	s.egressQueueLock.Lock()
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
+	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
 	j := 0
 	for {
 		_, err := s.egressQueue.Pop()
@@ -83,9 +83,9 @@ func TestNewARQ(t *testing.T) {
 		j++
 	}
 	a.s.log.Debugf("Pop() %d messages", j)
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
+	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
 
-	//assert.Equal(10, j)
+	assert.Equal(10, j)
 	s.egressQueueLock.Unlock()
 
 	for i := 0; i < 10; i++ {
@@ -108,7 +108,7 @@ func TestNewARQ(t *testing.T) {
 	fakeClock.Advance(2 * time.Second)
 
 	s.egressQueueLock.Lock()
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
+	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
 	j = 0
 	for {
 		_, err := s.egressQueue.Pop()
@@ -120,7 +120,7 @@ func TestNewARQ(t *testing.T) {
 	a.s.log.Debugf("Popped %d messages", j)
 
 	//assert.Equal(5, j)
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
+	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
 	s.egressQueueLock.Unlock()
 
 	a.s.log.Debugf("Halt()")

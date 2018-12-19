@@ -40,6 +40,8 @@ type EgressQueue interface {
 
 	// Push pushes the item onto the queue.
 	Push(*MessageRef) error
+
+	Len() int
 }
 
 // Queue is our in-memory queue implementation used as our egress FIFO queue
@@ -49,6 +51,11 @@ type Queue struct {
 	readHead  int
 	writeHead int
 	len       int
+}
+
+// Len returns the queue length.
+func (q *Queue) Len() int {
+	return q.len
 }
 
 // Push pushes the given message ref onto the queue and returns nil
