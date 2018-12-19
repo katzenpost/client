@@ -18,6 +18,7 @@ package session
 
 import (
 	"bytes"
+	"errors"
 	"sync"
 	"time"
 
@@ -60,12 +61,16 @@ func NewARQ(s *Session, log *logging.Logger) *ARQ {
 }
 
 // Enqueue adds a message to the ARQ
-func (a *ARQ) Enqueue(m *MessageRef) {
+func (a *ARQ) Enqueue(m *MessageRef) error {
+	if m == nil {
+		return errors.New("error, nil MessageRef")
+	}
 	a.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
 	a.queue.Enqueue(m.expiry(), m)
 	a.Unlock()
 	a.Signal()
+	return nil
 }
 
 // Remove removes the item with the given SURB ID.
@@ -75,7 +80,7 @@ func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
 
 func (a *ARQ) remove(surbID [sConstants.SURBIDLength]byte) {
 	filter := func(value interface{}) bool {
-		v := value.(MessageRef)
+		v := value.(*MessageRef)
 		return bytes.Equal(v.SURBID[:], surbID[:])
 	}
 	a.Lock()
@@ -163,6 +168,10 @@ func (a *ARQ) worker() {
 			a.Lock()
 			mesgRef := a.pop()
 			a.Unlock()
+			if mesgRef == nil {
+				a.log.Debug("weird")
+				continue
+			}
 			a.pushEgress(mesgRef)
 		case <-a.wakeupCh():
 			a.log.Debugf("Woke")

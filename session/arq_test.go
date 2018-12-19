@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	clog "github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/queue"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -55,22 +56,26 @@ func TestNewARQ(t *testing.T) {
 
 	s.egressQueue = new(Queue)
 	s.egressQueueLock = new(sync.Mutex)
+	log := logging.MustGetLogger("arq_test")
 
-	a, fakeClock := NewTestARQ(s)
+	a := NewARQ(s, log)
+	clock := a.clock
 	for i := 0; i < 10; i++ {
-		m := &MessageRef{}
+		surbId := [sConstants.SURBIDLength]byte{}
+		io.ReadFull(rand.Reader, surbId[:])
+		m := &MessageRef{
+			SURBID: &surbId,
+		}
 		m.ID = new([16]byte)
 
-		m.SentAt = fakeClock.Now()
+		m.SentAt = clock.Now()
 		m.ReplyETA = 200 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
 		a.Enqueue(m)
-		//fakeClock.BlockUntil(1)
-		fakeClock.Advance(300 * time.Millisecond)
+		clock.Sleep(200 * time.Millisecond)
 	}
 	a.s.log.Debugf("Sent 10 messages")
-	fakeClock.BlockUntil(1)
-	fakeClock.Advance(1 * time.Second)
+	clock.Sleep(1 * time.Second)
 
 	s.egressQueueLock.Lock()
 	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
@@ -89,23 +94,26 @@ func TestNewARQ(t *testing.T) {
 	s.egressQueueLock.Unlock()
 
 	for i := 0; i < 10; i++ {
-		m := &MessageRef{}
+		surbId := [sConstants.SURBIDLength]byte{}
+		io.ReadFull(rand.Reader, surbId[:])
+		m := &MessageRef{
+			SURBID: &surbId,
+		}
 		m.ID = new([16]byte)
 
-		m.SentAt = fakeClock.Now()
+		m.SentAt = clock.Now()
 		m.ReplyETA = 100 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
 		a.Enqueue(m)
-		fakeClock.Advance(20 * time.Millisecond)
+		clock.Sleep(20 * time.Millisecond)
 		if i%2 == 0 {
 			m.Reply = []byte("A")
-			//er := a.Remove(m)
-			//assert.NoError(er)
+			a.Remove(*m.SURBID)
 		}
-		fakeClock.Advance(80 * time.Millisecond)
+		clock.Sleep(80 * time.Millisecond)
 	}
 	a.s.log.Debugf("Sent 10 messages")
-	fakeClock.Advance(2 * time.Second)
+	clock.Sleep(2 * time.Second)
 
 	s.egressQueueLock.Lock()
 	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
@@ -119,7 +127,7 @@ func TestNewARQ(t *testing.T) {
 	}
 	a.s.log.Debugf("Popped %d messages", j)
 
-	//assert.Equal(5, j)
+	assert.Equal(5, j)
 	a.s.log.Debugf("egressQueue.len: %d", s.egressQueue.Len())
 	s.egressQueueLock.Unlock()
 
