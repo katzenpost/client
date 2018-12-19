@@ -17,7 +17,6 @@
 package session
 
 import (
-	"bytes"
 	"errors"
 	"sync"
 	"time"
@@ -40,8 +39,8 @@ type ARQ struct {
 	queue *queue.PriorityQueue
 	s     *Session
 
-	wakeChan   chan struct{}
-	removeChan chan [sConstants.SURBIDLength]byte
+	wakeChan  chan struct{}
+	removeMap map[[sConstants.SURBIDLength]byte]bool
 
 	clock clockwork.Clock
 }
@@ -49,11 +48,11 @@ type ARQ struct {
 // NewARQ makes a new ARQ and starts the worker thread.
 func NewARQ(s *Session, log *logging.Logger) *ARQ {
 	a := &ARQ{
-		log:        log,
-		s:          s,
-		queue:      queue.New(),
-		clock:      clockwork.NewRealClock(),
-		removeChan: make(chan [sConstants.SURBIDLength]byte),
+		log:       log,
+		s:         s,
+		queue:     queue.New(),
+		clock:     clockwork.NewRealClock(),
+		removeMap: make(map[[sConstants.SURBIDLength]byte]bool),
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
@@ -75,16 +74,8 @@ func (a *ARQ) Enqueue(m *Message) error {
 
 // Remove removes the item with the given SURB ID.
 func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
-	a.removeChan <- surbID
-}
-
-func (a *ARQ) remove(surbID [sConstants.SURBIDLength]byte) {
-	filter := func(value interface{}) bool {
-		v := value.(*Message)
-		return bytes.Equal(v.SURBID[:], surbID[:])
-	}
 	a.Lock()
-	a.queue.FilterOnce(filter)
+	a.removeMap[surbID] = true
 	a.Unlock()
 }
 
@@ -141,6 +132,11 @@ func (a *ARQ) worker() {
 		a.Lock()
 		if m := a.queue.Peek(); m != nil {
 			msg := m.Value.(*Message)
+			_, ok := a.removeMap[*msg.SURBID]
+			if ok {
+				_ = a.pop()
+				continue
+			}
 			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
 				a.log.Debugf("Queue behind schedule %v", tl)
@@ -160,9 +156,6 @@ func (a *ARQ) worker() {
 		case <-a.s.HaltCh():
 			a.log.Debugf("Terminating gracefully")
 			return
-		case surbID := <-a.removeChan:
-			a.remove(surbID)
-			continue
 		case <-c:
 			a.log.Debugf("Timer fired at %s", a.clock.Now())
 			a.Lock()
