@@ -61,9 +61,9 @@ func NewARQ(s *Session, log *logging.Logger) *ARQ {
 }
 
 // Enqueue adds a message to the ARQ
-func (a *ARQ) Enqueue(m *MessageRef) error {
+func (a *ARQ) Enqueue(m *Message) error {
 	if m == nil {
-		return errors.New("error, nil MessageRef")
+		return errors.New("error, nil Message")
 	}
 	a.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
@@ -80,7 +80,7 @@ func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
 
 func (a *ARQ) remove(surbID [sConstants.SURBIDLength]byte) {
 	filter := func(value interface{}) bool {
-		v := value.(*MessageRef)
+		v := value.(*Message)
 		return bytes.Equal(v.SURBID[:], surbID[:])
 	}
 	a.Lock()
@@ -114,20 +114,20 @@ func (a *ARQ) wakeupCh() chan struct{} {
 	return c
 }
 
-func (a *ARQ) pop() *MessageRef {
+func (a *ARQ) pop() *Message {
 	m := a.queue.Pop()
-	return m.Value.(*MessageRef)
+	return m.Value.(*Message)
 }
 
-func (a *ARQ) pushEgress(mesgRef *MessageRef) {
+func (a *ARQ) pushEgress(mesg *Message) {
 	// XXX should lock m
-	if len(mesgRef.Reply) > 0 {
+	if len(mesg.Reply) > 0 {
 		// Already ACK'd
 		return
 	}
-	a.log.Debugf("Rescheduling msg[%x]", mesgRef.ID)
+	a.log.Debugf("Rescheduling msg[%x]", mesg.ID)
 	a.s.egressQueueLock.Lock()
-	err := a.s.egressQueue.Push(mesgRef)
+	err := a.s.egressQueue.Push(mesg)
 	a.s.egressQueueLock.Unlock()
 	if err != nil {
 		panic(err)
@@ -140,13 +140,13 @@ func (a *ARQ) worker() {
 		var c <-chan time.Time
 		a.Lock()
 		if m := a.queue.Peek(); m != nil {
-			msg := m.Value.(*MessageRef)
+			msg := m.Value.(*Message)
 			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
 				a.log.Debugf("Queue behind schedule %v", tl)
-				mesgRef := a.pop()
+				mesg := a.pop()
 				a.Unlock()
-				a.pushEgress(mesgRef)
+				a.pushEgress(mesg)
 				continue
 			} else {
 				a.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
@@ -166,13 +166,13 @@ func (a *ARQ) worker() {
 		case <-c:
 			a.log.Debugf("Timer fired at %s", a.clock.Now())
 			a.Lock()
-			mesgRef := a.pop()
+			mesg := a.pop()
 			a.Unlock()
-			if mesgRef == nil {
+			if mesg == nil {
 				a.log.Debug("weird")
 				continue
 			}
-			a.pushEgress(mesgRef)
+			a.pushEgress(mesg)
 		case <-a.wakeupCh():
 			a.log.Debugf("Woke")
 		}

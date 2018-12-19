@@ -33,13 +33,13 @@ var ErrQueueEmpty = errors.New("Error, queue is empty.")
 type EgressQueue interface {
 
 	// Peek returns the next queue item without modifying the queue.
-	Peek() (*MessageRef, error)
+	Peek() (*Message, error)
 
 	// Pop pops the next item off the queue.
-	Pop() (*MessageRef, error)
+	Pop() (*Message, error)
 
 	// Push pushes the item onto the queue.
-	Push(*MessageRef) error
+	Push(*Message) error
 
 	Len() int
 }
@@ -47,7 +47,7 @@ type EgressQueue interface {
 // Queue is our in-memory queue implementation used as our egress FIFO queue
 // for messages sent by the client.
 type Queue struct {
-	content   [MaxQueueSize]MessageRef
+	content   [MaxQueueSize]Message
 	readHead  int
 	writeHead int
 	len       int
@@ -60,7 +60,7 @@ func (q *Queue) Len() int {
 
 // Push pushes the given message ref onto the queue and returns nil
 // on success, otherwise an error is returned.
-func (q *Queue) Push(e *MessageRef) error {
+func (q *Queue) Push(e *Message) error {
 	if q.len >= MaxQueueSize {
 		return ErrQueueFull
 	}
@@ -72,12 +72,12 @@ func (q *Queue) Push(e *MessageRef) error {
 
 // Pop pops the next message ref off the queue and returns nil
 // upon success, otherwise an error is returned.
-func (q *Queue) Pop() (*MessageRef, error) {
+func (q *Queue) Pop() (*Message, error) {
 	if q.len <= 0 {
 		return nil, ErrQueueEmpty
 	}
 	result := q.content[q.readHead]
-	q.content[q.readHead] = MessageRef{}
+	q.content[q.readHead] = Message{}
 	q.readHead = (q.readHead + 1) % MaxQueueSize
 	q.len--
 	return &result, nil
@@ -85,7 +85,7 @@ func (q *Queue) Pop() (*MessageRef, error) {
 
 // Peek returns the next message ref from the queue without
 // modifying the queue.
-func (q *Queue) Peek() (*MessageRef, error) {
+func (q *Queue) Peek() (*Message, error) {
 	if q.len <= 0 {
 		return nil, ErrQueueEmpty
 	}

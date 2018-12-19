@@ -63,7 +63,7 @@ func TestNewARQ(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		surbId := [sConstants.SURBIDLength]byte{}
 		io.ReadFull(rand.Reader, surbId[:])
-		m := &MessageRef{
+		m := &Message{
 			SURBID: &surbId,
 		}
 		m.ID = new([16]byte)
@@ -96,7 +96,7 @@ func TestNewARQ(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		surbId := [sConstants.SURBIDLength]byte{}
 		io.ReadFull(rand.Reader, surbId[:])
-		m := &MessageRef{
+		m := &Message{
 			SURBID: &surbId,
 		}
 		m.ID = new([16]byte)

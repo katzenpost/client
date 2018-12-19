@@ -75,8 +75,8 @@ type Session struct {
 	egressQueue     EgressQueue
 	egressQueueLock *sync.Mutex
 
-	surbIDMap      map[[sConstants.SURBIDLength]byte]*MessageRef
-	messageIDMap   map[[cConstants.MessageIDLength]byte]*MessageRef
+	surbIDMap      map[[sConstants.SURBIDLength]byte]*Message
+	messageIDMap   map[[cConstants.MessageIDLength]byte]*Message
 	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
 	mapLock        *sync.Mutex
 }
@@ -112,8 +112,8 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	}
 
 	// XXX todo: replace all this with persistent data store
-	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*MessageRef)
-	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
+	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*Message)
+	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
 	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
 	s.mapLock = new(sync.Mutex)
 
@@ -248,12 +248,12 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
 
-	msgRef, ok := s.surbIDMap[*surbID]
+	msg, ok := s.surbIDMap[*surbID]
 	if !ok {
 		s.log.Debug("wtf, received reply with unexpected SURBID")
 		return nil
 	}
-	_, ok = s.replyNotifyMap[*msgRef.ID]
+	_, ok = s.replyNotifyMap[*msg.ID]
 	if !ok {
 		s.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(s.replyNotifyMap))
 		for key := range s.replyNotifyMap {
@@ -262,7 +262,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		return nil
 	}
 
-	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msgRef.Key)
+	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("SURB Reply decryption failure: %s", err)
 		return err
@@ -272,24 +272,24 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		return nil
 	}
 
-	switch msgRef.SURBType {
+	switch msg.SURBType {
 	case cConstants.SurbTypeACK:
 		// Validate that the ACK payload is entirely '0x00'.
 		if !cutils.CtIsZero(plaintext) {
 			s.log.Warningf("Discarding SURB-ACK %v: Malformed payload.", idStr)
 			return nil
 		}
-		msgRef.Reply = plaintext[:]
-		s.replyNotifyMap[*msgRef.ID].Unlock()
+		msg.Reply = plaintext[:]
+		s.replyNotifyMap[*msg.ID].Unlock()
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		msgRef.Reply = plaintext[2:]
-		s.replyNotifyMap[*msgRef.ID].Unlock()
+		msg.Reply = plaintext[2:]
+		s.replyNotifyMap[*msg.ID].Unlock()
 	default:
-		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msgRef.SURBType)
+		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}
 
-	delete(s.surbIDMap, *msgRef.SURBID)
-	s.arq.Remove(*msgRef.SURBID)
+	delete(s.surbIDMap, *msg.SURBID)
+	s.arq.Remove(*msg.SURBID)
 
 	return nil
 }
