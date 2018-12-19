@@ -98,22 +98,20 @@ func (a *ARQ) wakeupCh() chan struct{} {
 	return c
 }
 
-func (a *ARQ) reschedule() {
-	a.s.log.Debugf("Timer fired at %s", a.clock.Now())
-	a.Lock()
+func (a *ARQ) pop() *MessageRef {
 	m := a.priq.Pop()
-	a.Unlock()
-	if m == nil {
-		panic("We've done something wrong here...")
-	}
+	return m.Value.(*MessageRef)
+}
+
+func (a *ARQ) reschedule(mesgRef *MessageRef) {
 	// XXX should lock m
-	if len(m.Value.(*MessageRef).Reply) > 0 {
+	if len(mesgRef.Reply) > 0 {
 		// Already ACK'd
 		return
 	}
-	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*MessageRef).ID)
+	a.s.log.Debugf("Rescheduling msg[%x]", mesgRef.ID)
 	a.s.egressQueueLock.Lock()
-	err := a.s.egressQueue.Push(m.Value.(*MessageRef))
+	err := a.s.egressQueue.Push(mesgRef)
 	a.s.egressQueueLock.Unlock()
 	if err != nil {
 		panic(err)
@@ -130,8 +128,9 @@ func (a *ARQ) worker() {
 			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
 				a.s.log.Debugf("Queue behind schedule %v", tl)
+				mesgRef := a.pop()
 				a.Unlock()
-				a.reschedule()
+				a.reschedule(mesgRef)
 				continue
 			} else {
 				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
@@ -146,7 +145,11 @@ func (a *ARQ) worker() {
 			a.s.log.Debugf("Terminating gracefully")
 			return
 		case <-c:
-			a.reschedule()
+			a.s.log.Debugf("Timer fired at %s", a.clock.Now())
+			a.Lock()
+			mesgRef := a.pop()
+			a.Unlock()
+			a.reschedule(mesgRef)
 		case <-a.wakeupCh():
 			a.s.log.Debugf("Woke")
 		}
