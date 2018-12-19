@@ -59,7 +59,7 @@ type Session struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
-	// XXX Our client scheduler is different than specified in
+	// NOTE: Our client scheduler is different than specified in
 	// "The Loopix Anonymity System".
 	//
 	// We use λP a poisson process to control the interval between
@@ -162,7 +162,9 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.setTimers(doc)
 
 	s.Go(s.worker)
-	s.arq = NewARQ(s)
+
+	arqlog := logBackend.GetLogger(fmt.Sprintf("%s@%s_c ARQ", cfg.Account.User, cfg.Account.Provider))
+	s.arq = NewARQ(s, arqlog)
 	return s, nil
 }
 

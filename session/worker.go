@@ -99,6 +99,7 @@ func (s *Session) worker() {
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
+			s.arq.Halt()
 			return
 		case <-s.pTimer.Timer.C:
 			lambdaPFired = true

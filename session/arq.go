@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/core/queue"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // ARQ is the struct type that keeps state for reliable message delivery.
@@ -32,6 +33,8 @@ type ARQ struct {
 	sync.Mutex
 	sync.Cond
 	worker.Worker
+
+	log *logging.Logger
 
 	queue *queue.PriorityQueue
 	s     *Session
@@ -43,8 +46,9 @@ type ARQ struct {
 }
 
 // NewARQ makes a new ARQ and starts the worker thread.
-func NewARQ(s *Session) *ARQ {
+func NewARQ(s *Session, log *logging.Logger) *ARQ {
 	a := &ARQ{
+		log:        log,
 		s:          s,
 		queue:      queue.New(),
 		clock:      clockwork.NewRealClock(),
@@ -57,7 +61,7 @@ func NewARQ(s *Session) *ARQ {
 
 // Enqueue adds a message to the ARQ
 func (a *ARQ) Enqueue(m *MessageRef) {
-	a.s.log.Debugf("Enqueue msg[%x]", m.ID)
+	a.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
 	a.queue.Enqueue(m.expiry(), m)
 	a.Unlock()
@@ -80,7 +84,7 @@ func (a *ARQ) remove(surbID [sConstants.SURBIDLength]byte) {
 }
 
 func (a *ARQ) wakeupCh() chan struct{} {
-	a.s.log.Debug("wakeupCh()")
+	a.log.Debug("wakeupCh()")
 	if a.wakeChan != nil {
 		return a.wakeChan
 	}
@@ -94,10 +98,10 @@ func (a *ARQ) wakeupCh() chan struct{} {
 			a.L.Unlock()
 			select {
 			case <-a.HaltCh():
-				a.s.log.Debugf("CondCh worker() returning")
+				a.log.Debugf("CondCh worker() returning")
 				return
 			case c <- v:
-				a.s.log.Debugf("CondCh worker() writing")
+				a.log.Debugf("CondCh worker() writing")
 			}
 		}
 	}()
@@ -116,7 +120,7 @@ func (a *ARQ) pushEgress(mesgRef *MessageRef) {
 		// Already ACK'd
 		return
 	}
-	a.s.log.Debugf("Rescheduling msg[%x]", mesgRef.ID)
+	a.log.Debugf("Rescheduling msg[%x]", mesgRef.ID)
 	a.s.egressQueueLock.Lock()
 	err := a.s.egressQueue.Push(mesgRef)
 	a.s.egressQueueLock.Unlock()
@@ -127,41 +131,41 @@ func (a *ARQ) pushEgress(mesgRef *MessageRef) {
 
 func (a *ARQ) worker() {
 	for {
-		a.s.log.Debugf("Loop0")
+		a.log.Debugf("Loop0")
 		var c <-chan time.Time
 		a.Lock()
 		if m := a.queue.Peek(); m != nil {
 			msg := m.Value.(*MessageRef)
 			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
-				a.s.log.Debugf("Queue behind schedule %v", tl)
+				a.log.Debugf("Queue behind schedule %v", tl)
 				mesgRef := a.pop()
 				a.Unlock()
 				a.pushEgress(mesgRef)
 				continue
 			} else {
-				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
+				a.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
 				c = a.clock.After(tl)
 			}
 		} else {
-			a.s.log.Debug("Nothing in queue")
+			a.log.Debug("Nothing in queue")
 		}
 		a.Unlock()
 		select {
 		case <-a.s.HaltCh():
-			a.s.log.Debugf("Terminating gracefully")
+			a.log.Debugf("Terminating gracefully")
 			return
 		case surbID := <-a.removeChan:
 			a.remove(surbID)
 			continue
 		case <-c:
-			a.s.log.Debugf("Timer fired at %s", a.clock.Now())
+			a.log.Debugf("Timer fired at %s", a.clock.Now())
 			a.Lock()
 			mesgRef := a.pop()
 			a.Unlock()
 			a.pushEgress(mesgRef)
 		case <-a.wakeupCh():
-			a.s.log.Debugf("Woke")
+			a.log.Debugf("Woke")
 		}
 	}
 }
