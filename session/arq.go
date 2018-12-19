@@ -103,7 +103,7 @@ func (a *ARQ) pop() *MessageRef {
 	return m.Value.(*MessageRef)
 }
 
-func (a *ARQ) reschedule(mesgRef *MessageRef) {
+func (a *ARQ) pushEgress(mesgRef *MessageRef) {
 	// XXX should lock m
 	if len(mesgRef.Reply) > 0 {
 		// Already ACK'd
@@ -130,7 +130,7 @@ func (a *ARQ) worker() {
 				a.s.log.Debugf("Queue behind schedule %v", tl)
 				mesgRef := a.pop()
 				a.Unlock()
-				a.reschedule(mesgRef)
+				a.pushEgress(mesgRef)
 				continue
 			} else {
 				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
@@ -149,7 +149,7 @@ func (a *ARQ) worker() {
 			a.Lock()
 			mesgRef := a.pop()
 			a.Unlock()
-			a.reschedule(mesgRef)
+			a.pushEgress(mesgRef)
 		case <-a.wakeupCh():
 			a.s.log.Debugf("Woke")
 		}
