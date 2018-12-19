@@ -50,9 +50,6 @@ type MessageRef struct {
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration
 
-	// WithSURB is set to true if a message is sent with a SURB.
-	WithSURB bool
-
 	// SURBID is the SURB identifier.
 	SURBID *[sConstants.SURBIDLength]byte
 
@@ -109,34 +106,30 @@ func (s *Session) sendNext() error {
 
 func (s *Session) send(msgRef *MessageRef) error {
 	var err error
-	if msgRef.WithSURB {
-		surbID := [sConstants.SURBIDLength]byte{}
-		io.ReadFull(rand.Reader, surbID[:])
-		key, eta, err := s.minclient.SendCiphertext(msgRef.Recipient, msgRef.Provider, &surbID, msgRef.Payload)
-		if err != nil {
-			return err
-		}
-		msgRef.Key = key
-		msgRef.SentAt = time.Now()
-		msgRef.ReplyETA = eta
 
-		s.mapLock.Lock()
-		defer s.mapLock.Unlock()
+	surbID := [sConstants.SURBIDLength]byte{}
+	io.ReadFull(rand.Reader, surbID[:])
 
-		s.surbIDMap[surbID] = msgRef
-		s.messageIDMap[*msgRef.ID] = msgRef
-	} else {
-		err = s.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
+	key, eta, err := s.minclient.SendCiphertext(msgRef.Recipient, msgRef.Provider, &surbID, msgRef.Payload)
+	if err != nil {
+		return err
 	}
+
+	msgRef.Key = key
+	msgRef.SentAt = time.Now()
+	msgRef.ReplyETA = eta
+
+	s.mapLock.Lock()
+	defer s.mapLock.Unlock()
+
+	s.surbIDMap[surbID] = msgRef
+	s.messageIDMap[*msgRef.ID] = msgRef
+
 	return err
 }
 
 func (s *Session) sendLoopDecoy() error {
 	s.log.Info("sending loop decoy")
-	return s.sendLoop(true)
-}
-
-func (s *Session) sendLoop(withSURB bool) error {
 	const loopService = "loop"
 	serviceDesc, err := s.GetService(loopService)
 	if err != nil {
@@ -150,7 +143,6 @@ func (s *Session) sendLoop(withSURB bool) error {
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Payload:   payload[:],
-		WithSURB:  withSURB,
 	}
 	return s.send(msgRef)
 }
@@ -165,7 +157,6 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*M
 		Recipient: recipient,
 		Provider:  provider,
 		Payload:   message,
-		WithSURB:  false,
 	}
 
 	s.egressQueueLock.Lock()
@@ -194,7 +185,6 @@ func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte,
 		Recipient: recipient,
 		Provider:  provider,
 		Payload:   payload,
-		WithSURB:  wantResponse,
 		SURBType:  cConstants.SurbTypeKaetzchen,
 	}
 

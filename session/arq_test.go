@@ -33,7 +33,7 @@ func NewTestARQ(s *Session) (*ARQ, clockwork.FakeClock) {
 	fakeClock := clockwork.NewFakeClock()
 	a := &ARQ{
 		s:     s,
-		priq:  queue.New(),
+		queue: queue.New(),
 		clock: fakeClock,
 	}
 	a.L = new(sync.Mutex)
