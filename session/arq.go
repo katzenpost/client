@@ -31,7 +31,6 @@ import (
 // ARQ is the struct type that keeps state for reliable message delivery.
 type ARQ struct {
 	sync.Mutex
-	sync.Cond
 	worker.Worker
 
 	log *logging.Logger
@@ -39,8 +38,8 @@ type ARQ struct {
 	queue *queue.PriorityQueue
 	s     *Session
 
-	wakeChan  chan struct{}
-	removeMap map[[sConstants.SURBIDLength]byte]bool
+	ingressChan chan *Message
+	removeMap   map[[sConstants.SURBIDLength]byte]bool
 
 	clock clockwork.Clock
 }
@@ -48,13 +47,13 @@ type ARQ struct {
 // NewARQ makes a new ARQ and starts the worker thread.
 func NewARQ(s *Session, log *logging.Logger) *ARQ {
 	a := &ARQ{
-		log:       log,
-		s:         s,
-		queue:     queue.New(),
-		clock:     clockwork.NewRealClock(),
-		removeMap: make(map[[sConstants.SURBIDLength]byte]bool),
+		log:         log,
+		s:           s,
+		queue:       queue.New(),
+		clock:       clockwork.NewRealClock(),
+		ingressChan: make(chan *Message),
+		removeMap:   make(map[[sConstants.SURBIDLength]byte]bool),
 	}
-	a.L = new(sync.Mutex)
 	a.Go(a.worker)
 	return a
 }
@@ -64,11 +63,8 @@ func (a *ARQ) Enqueue(m *Message) error {
 	if m == nil {
 		return errors.New("error, nil Message")
 	}
+	a.ingressChan <- m
 	a.log.Debugf("Enqueue msg[%x]", m.ID)
-	a.Lock()
-	a.queue.Enqueue(m.expiry(), m)
-	a.Unlock()
-	a.Signal()
 	return nil
 }
 
@@ -77,37 +73,6 @@ func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
 	a.Lock()
 	a.removeMap[surbID] = true
 	a.Unlock()
-}
-
-func (a *ARQ) wakeupCh() chan struct{} {
-	a.log.Debug("wakeupCh()")
-	if a.wakeChan != nil {
-		return a.wakeChan
-	}
-	c := make(chan struct{})
-	go func() {
-		defer close(c)
-		var v struct{}
-		for {
-			a.L.Lock()
-			a.Wait()
-			a.L.Unlock()
-			select {
-			case <-a.HaltCh():
-				a.log.Debugf("CondCh worker() returning")
-				return
-			case c <- v:
-				a.log.Debugf("CondCh worker() writing")
-			}
-		}
-	}()
-	a.wakeChan = c
-	return c
-}
-
-func (a *ARQ) pop() *Message {
-	m := a.queue.Pop()
-	return m.Value.(*Message)
 }
 
 func (a *ARQ) pushEgress(mesg *Message) {
@@ -129,19 +94,22 @@ func (a *ARQ) worker() {
 	for {
 		a.log.Debugf("Loop0")
 		var c <-chan time.Time
-		a.Lock()
+
 		if m := a.queue.Peek(); m != nil {
 			msg := m.Value.(*Message)
+			a.Lock()
 			_, ok := a.removeMap[*msg.SURBID]
+			a.Unlock()
 			if ok {
-				_ = a.pop()
+				_ = a.queue.Pop()
 				continue
 			}
 			tl := msg.timeLeft(a.clock)
 			if tl < 0 {
 				a.log.Debugf("Queue behind schedule %v", tl)
-				mesg := a.pop()
-				a.Unlock()
+				raw := a.queue.Pop()
+				mesg := raw.Value.(*Message)
+
 				a.pushEgress(mesg)
 				continue
 			} else {
@@ -151,23 +119,22 @@ func (a *ARQ) worker() {
 		} else {
 			a.log.Debug("Nothing in queue")
 		}
-		a.Unlock()
+
 		select {
 		case <-a.s.HaltCh():
 			a.log.Debugf("Terminating gracefully")
 			return
 		case <-c:
 			a.log.Debugf("Timer fired at %s", a.clock.Now())
-			a.Lock()
-			mesg := a.pop()
-			a.Unlock()
+			raw := a.queue.Pop()
+			mesg := raw.Value.(*Message)
 			if mesg == nil {
 				a.log.Debug("weird")
 				continue
 			}
 			a.pushEgress(mesg)
-		case <-a.wakeupCh():
-			a.log.Debugf("Woke")
+		case message := <-a.ingressChan:
+			a.queue.Enqueue(message.expiry(), message)
 		}
 	}
 }

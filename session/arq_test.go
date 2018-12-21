@@ -35,13 +35,13 @@ func NewTestARQ(s *Session) (*ARQ, clockwork.FakeClock) {
 	log := logging.MustGetLogger("arq_test")
 	fakeClock := clockwork.NewFakeClock()
 	a := &ARQ{
-		s:         s,
-		queue:     queue.New(),
-		clock:     fakeClock,
-		log:       log,
-		removeMap: make(map[[sConstants.SURBIDLength]byte]bool),
+		s:           s,
+		queue:       queue.New(),
+		clock:       fakeClock,
+		log:         log,
+		ingressChan: make(chan *Message),
+		removeMap:   make(map[[sConstants.SURBIDLength]byte]bool),
 	}
-	a.L = new(sync.Mutex)
 	a.Go(a.worker)
 	return a, fakeClock
 }
