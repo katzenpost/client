@@ -135,8 +135,8 @@ func (s *Session) lambdaPTask() {
 	// Attempt to send user data first, if any exists.
 	// Otherwise send a drop decoy message.
 	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
 	_, err := s.egressQueue.Peek()
+	s.egressQueueLock.Unlock()
 	if err == nil {
 		err := s.sendNext()
 		if err != nil {
