@@ -66,12 +66,11 @@ func (a *TimerQ) Push(m *Message) {
 func (a *TimerQ) Remove(m *Message) error {
 	a.Lock()
 	defer a.Unlock()
-	// If the item to be removed is the first element, stop the timer and schedule a new one.
 	if mo := a.priq.Peek(); mo != nil {
 		if mo.Value.(*Message) == m {
-			a.timer.Stop()
 			a.priq.Pop()
 			if a.priq.Len() > 0 {
+				// wake up the worker to reset the timer
 				a.Signal()
 			}
 		}
@@ -129,6 +128,7 @@ func (a *TimerQ) forward() {
 
 func (a *TimerQ) worker() {
 	for {
+		var c <-chan time.Time
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
 			msg := m.Value.(*Message)
@@ -138,15 +138,14 @@ func (a *TimerQ) worker() {
 				a.forward()
 				continue
 			} else {
-				a.timer.Stop()
-				a.timer.Reset(tl)
+				c = time.After(tl)
 			}
 		}
 		a.Unlock()
 		select {
 		case <-a.HaltCh():
 			return
-		case <-a.timer.C:
+		case <-c:
 			a.forward()
 		case <-a.wakeupCh():
 		}
