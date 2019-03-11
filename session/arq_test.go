@@ -22,23 +22,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/queue"
 	"github.com/stretchr/testify/assert"
 )
 
-func NewTestARQ(s *Session) (*ARQ, clockwork.FakeClock) {
-	fakeClock := clockwork.NewFakeClock()
+func NewTestARQ(s *Session) (*ARQ) {
 	a := &ARQ{
 		s:     s,
 		priq:  queue.New(),
-		clock: fakeClock,
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
-	return a, fakeClock
+	return a
 }
 
 func TestNewARQ(t *testing.T) {
@@ -54,20 +51,20 @@ func TestNewARQ(t *testing.T) {
 	s.egressQueue = q
 	s.egressQueueLock = new(sync.Mutex)
 
-	a, fakeClock := NewTestARQ(s)
+	a := NewTestARQ(s)
 	for i := 0; i < 10; i++ {
-		m := &MessageRef{}
+		m := &Message{}
 		m.ID = new([16]byte)
 
-		m.SentAt = fakeClock.Now()
+		m.SentAt = time.Now()
 		m.ReplyETA = 200 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
 		a.Enqueue(m)
-		fakeClock.Advance(1 * time.Millisecond)
+		<-time.After(1 * time.Millisecond)
 	}
 	a.s.log.Debugf("Sent 10 messages")
 
-	fakeClock.Advance(1 * time.Second)
+	<-time.After(1 * time.Second)
 
 	s.egressQueueLock.Lock()
 	a.s.log.Debugf("egressQueue.len: %d", q.len)
@@ -86,23 +83,23 @@ func TestNewARQ(t *testing.T) {
 	s.egressQueueLock.Unlock()
 
 	for i := 0; i < 10; i++ {
-		m := &MessageRef{}
+		m := &Message{}
 		m.ID = new([16]byte)
 
-		m.SentAt = fakeClock.Now()
+		m.SentAt = time.Now()
 		m.ReplyETA = 100 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
 		a.Enqueue(m)
-		fakeClock.Advance(20 * time.Millisecond)
+		<-time.After(20 * time.Millisecond)
 		if i%2 == 0 {
 			m.Reply = []byte("A")
 			//er := a.Remove(m)
 			//assert.NoError(er)
 		}
-		fakeClock.Advance(80 * time.Millisecond)
+		<-time.After(80 * time.Millisecond)
 	}
 	a.s.log.Debugf("Sent 10 messages")
-	fakeClock.Advance(2 * time.Second)
+	<-time.After(2 * time.Second)
 
 	s.egressQueueLock.Lock()
 	a.s.log.Debugf("egressQueue.len: %d", q.len)

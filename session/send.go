@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jonboulle/clockwork"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
@@ -63,13 +62,13 @@ type Message struct {
 	SURBType int
 }
 
-func (m *MessageRef) expiry() uint64 {
+func (m *Message) expiry() uint64 {
 	// TODO: add exponential backoff
 	return uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
 }
 
-func (m *MessageRef) timeLeft(clock clockwork.Clock) time.Duration {
-	return m.SentAt.Add(m.ReplyETA).Sub(clock.Now())
+func (m *Message) timeLeft() time.Duration {
+	return m.SentAt.Add(m.ReplyETA).Sub(time.Now())
 }
 
 // WaitForReply blocks until a reply is received.

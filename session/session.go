@@ -277,17 +277,17 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 			s.log.Warningf("Discarding SURB-ACK %v: Malformed payload.", idStr)
 			return nil
 		}
-		msgRef.Reply = plaintext[:]
-		s.replyNotifyMap[*msgRef.ID].Unlock()
+		msg.Reply = plaintext[:]
+		s.replyNotifyMap[*msg.ID].Unlock()
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		msg.Reply = plaintext[2:]
 		s.replyNotifyMap[*msg.ID].Unlock()
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}
-	delete(s.surbIDMap, *msgRef.SURBID)
+	delete(s.surbIDMap, *msg.SURBID)
 
-	s.arq.Remove(*msgRef.SURBID)
+	s.arq.Remove(*msg.SURBID)
 	return nil
 }
 

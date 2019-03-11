@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/core/queue"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
@@ -37,7 +36,6 @@ type ARQ struct {
 	s      *Session
 	wakech chan struct{}
 
-	clock clockwork.Clock
 }
 
 // NewARQ intantiates a new ARQ and starts the worker routine
@@ -45,7 +43,6 @@ func NewARQ(s *Session) *ARQ {
 	a := &ARQ{
 		s:     s,
 		priq:  queue.New(),
-		clock: clockwork.NewRealClock(),
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
@@ -53,7 +50,7 @@ func NewARQ(s *Session) *ARQ {
 }
 
 // Enqueue adds a message to the ARQ
-func (a *ARQ) Enqueue(m *MessageRef) {
+func (a *ARQ) Enqueue(m *Message) {
 	a.s.log.Debugf("Enqueue msg[%x]", m.ID)
 	a.Lock()
 	a.priq.Enqueue(m.expiry(), m)
@@ -63,10 +60,10 @@ func (a *ARQ) Enqueue(m *MessageRef) {
 
 // Remove removes the item with the given SURB ID.
 // This assumes the priority queue values are of type
-// MessageRef.
+// Message.
 func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
 	filter := func(value interface{}) bool {
-		v := value.(MessageRef)
+		v := value.(Message)
 		return bytes.Equal(v.SURBID[:], surbID[:])
 	}
 	a.priq.FilterOnce(filter)
@@ -99,7 +96,7 @@ func (a *ARQ) wakeupCh() chan struct{} {
 }
 
 func (a *ARQ) reschedule() {
-	a.s.log.Debugf("Timer fired at %s", a.clock.Now())
+	a.s.log.Debugf("Timer fired at %s", time.Now())
 	a.Lock()
 	m := a.priq.Pop()
 	a.Unlock()
@@ -107,13 +104,13 @@ func (a *ARQ) reschedule() {
 		panic("We've done something wrong here...")
 	}
 	// XXX should lock m
-	if len(m.Value.(*MessageRef).Reply) > 0 {
+	if len(m.Value.(*Message).Reply) > 0 {
 		// Already ACK'd
 		return
 	}
-	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*MessageRef).ID)
+	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*Message).ID)
 	a.s.egressQueueLock.Lock()
-	err := a.s.egressQueue.Push(m.Value.(*MessageRef))
+	err := a.s.egressQueue.Push(m.Value.(*Message))
 	a.s.egressQueueLock.Unlock()
 	if err != nil {
 		panic(err)
@@ -126,8 +123,8 @@ func (a *ARQ) worker() {
 		var c <-chan time.Time
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
-			msg := m.Value.(*MessageRef)
-			tl := msg.timeLeft(a.clock)
+			msg := m.Value.(*Message)
+			tl := msg.timeLeft()
 			if tl < 0 {
 				a.s.log.Debugf("Queue behind schedule %v", tl)
 				a.Unlock()
@@ -135,7 +132,7 @@ func (a *ARQ) worker() {
 				continue
 			} else {
 				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
-				c = a.clock.After(tl)
+				c = time.After(tl)
 			}
 		} else {
 			a.s.log.Debug("Nothing in priq")
