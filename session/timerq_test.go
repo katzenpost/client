@@ -1,5 +1,5 @@
-// queue.go - Client egress queue.
-// Copyright (C) 2018  masala, David Stainton.
+// timerq_test.go - Time delayed queue tests
+// Copyright (C) 2018  Masala, David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
