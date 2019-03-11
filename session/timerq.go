@@ -35,8 +35,8 @@ type TimerQ struct {
 	sync.Cond
 	worker.Worker
 
-	priq   *queue.PriorityQueue
-	nextQ  nqueue
+	priq  *queue.PriorityQueue
+	nextQ nqueue
 
 	timer  *time.Timer
 	wakech chan struct{}
@@ -119,7 +119,6 @@ func (a *TimerQ) forward() {
 	if m == nil {
 		return
 	}
-
 
 	if err := a.nextQ.Push(m.Value.(*Message)); err != nil {
 		panic(err)
