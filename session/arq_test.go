@@ -24,19 +24,8 @@ import (
 
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/queue"
 	"github.com/stretchr/testify/assert"
 )
-
-func NewTestARQ(s *Session) (*ARQ) {
-	a := &ARQ{
-		s:     s,
-		priq:  queue.New(),
-	}
-	a.L = new(sync.Mutex)
-	a.Go(a.worker)
-	return a
-}
 
 func TestNewARQ(t *testing.T) {
 	assert := assert.New(t)
@@ -51,7 +40,7 @@ func TestNewARQ(t *testing.T) {
 	s.egressQueue = q
 	s.egressQueueLock = new(sync.Mutex)
 
-	a := NewTestARQ(s)
+	a := NewARQ(s)
 	for i := 0; i < 10; i++ {
 		m := &Message{}
 		m.ID = new([16]byte)

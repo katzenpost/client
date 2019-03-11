@@ -33,7 +33,7 @@ type ARQ struct {
 
 	priq   *queue.PriorityQueue
 	s      *Session
-	timer time.Timer
+	timer  *time.Timer
 	wakech chan struct{}
 
 }
@@ -42,6 +42,7 @@ type ARQ struct {
 func NewARQ(s *Session) *ARQ {
 	a := &ARQ{
 		s:     s,
+		timer: time.NewTimer(0),
 		priq:  queue.New(),
 	}
 	a.L = new(sync.Mutex)
@@ -138,7 +139,6 @@ func (a *ARQ) reschedule() {
 func (a *ARQ) worker() {
 	for {
 		a.s.log.Debugf("Loop0")
-		var c <-chan time.Time
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
 			msg := m.Value.(*Message)
@@ -150,7 +150,8 @@ func (a *ARQ) worker() {
 				continue
 			} else {
 				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
-				c = time.After(tl)
+				a.timer.Stop()
+				a.timer.Reset(tl)
 			}
 		} else {
 			a.s.log.Debug("Nothing in priq")
@@ -160,7 +161,7 @@ func (a *ARQ) worker() {
 		case <-a.s.HaltCh():
 			a.s.log.Debugf("Terminating gracefully")
 			return
-		case <-c:
+		case <-a.timer.C:
 			a.reschedule()
 		case <-a.wakeupCh():
 			a.s.log.Debugf("Woke")
