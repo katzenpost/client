@@ -25,23 +25,27 @@ import (
 	"github.com/katzenpost/core/worker"
 )
 
-// ARQ is the struct type that keeps state for reliable message delivery
-type ARQ struct {
+type nqueue interface {
+	Push(*Message) error
+}
+
+// TimerQ is a queue that delays messages before forwarding to another queue
+type TimerQ struct {
 	sync.Mutex
 	sync.Cond
 	worker.Worker
 
 	priq   *queue.PriorityQueue
-	s      *Session
+	nextQ  nqueue
+
 	timer  *time.Timer
 	wakech chan struct{}
-
 }
 
-// NewARQ intantiates a new ARQ and starts the worker routine
-func NewARQ(s *Session) *ARQ {
-	a := &ARQ{
-		s:     s,
+// NewTimerQ intantiates a new TimerQ and starts the worker routine
+func NewTimerQ(q nqueue) *TimerQ {
+	a := &TimerQ{
+		nextQ: q,
 		timer: time.NewTimer(0),
 		priq:  queue.New(),
 	}
@@ -50,22 +54,20 @@ func NewARQ(s *Session) *ARQ {
 	return a
 }
 
-// Enqueue adds a message to the ARQ
-func (a *ARQ) Enqueue(m *Message) {
-	a.s.log.Debugf("Enqueue msg[%x]", m.ID)
+// Push adds a message to the TimerQ
+func (a *TimerQ) Push(m *Message) {
 	a.Lock()
 	a.priq.Enqueue(m.expiry(), m)
 	a.Unlock()
 	a.Signal()
 }
 
-// Remove removes a Message from the ARQ
-func (a *ARQ) Remove(m *Message) error {
+// Remove removes a Message from the TimerQ
+func (a *TimerQ) Remove(m *Message) error {
 	a.Lock()
 	defer a.Unlock()
 	// If the item to be removed is the first element, stop the timer and schedule a new one.
 	if mo := a.priq.Peek(); mo != nil {
-		a.s.log.Debugf("Removing message")
 		if mo.Value.(*Message) == m {
 			a.timer.Stop()
 			a.priq.Pop()
