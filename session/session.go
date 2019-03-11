@@ -286,8 +286,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}
 	delete(s.surbIDMap, *msg.SURBID)
-
-	s.arq.Remove(*msg.SURBID)
+	s.arq.Remove(msg)
 	return nil
 }
 

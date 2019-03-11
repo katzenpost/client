@@ -17,12 +17,11 @@
 package session
 
 import (
-	"bytes"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/katzenpost/core/queue"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
 )
 
@@ -34,6 +33,7 @@ type ARQ struct {
 
 	priq   *queue.PriorityQueue
 	s      *Session
+	timer time.Timer
 	wakech chan struct{}
 
 }
@@ -58,15 +58,33 @@ func (a *ARQ) Enqueue(m *Message) {
 	a.Signal()
 }
 
-// Remove removes the item with the given SURB ID.
-// This assumes the priority queue values are of type
-// Message.
-func (a *ARQ) Remove(surbID [sConstants.SURBIDLength]byte) {
-	filter := func(value interface{}) bool {
-		v := value.(Message)
-		return bytes.Equal(v.SURBID[:], surbID[:])
+// Remove removes a Message from the ARQ
+func (a *ARQ) Remove(m *Message) error {
+	a.Lock()
+	defer a.Unlock()
+	// If the item to be removed is the first element, stop the timer and schedule a new one.
+	if mo := a.priq.Peek(); mo != nil {
+		a.s.log.Debugf("Removing message")
+		if mo.Value.(*Message) == m {
+			a.timer.Stop()
+			a.priq.Pop()
+			if a.priq.Len() > 0 {
+				a.Signal()
+			}
+		}
+	} else {
+		mo := a.priq.Remove(m.expiry())
+		switch mo {
+		case m:
+		case nil:
+			a.s.log.Debugf("Failed to remove %v from queue, already gone", m)
+		default:
+			a.s.log.Errorf("Removed wrong item from queue! Re-enqueuing")
+			defer a.Enqueue(mo.(*Message))
+			return fmt.Errorf("Failed to remove %v", m)
+		}
 	}
-	a.priq.FilterOnce(filter)
+	return nil
 }
 
 func (a *ARQ) wakeupCh() chan struct{} {
