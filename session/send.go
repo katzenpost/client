@@ -28,6 +28,9 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
+// maxTransmissions is the number of times message retransmission will occur before giving up
+var maxTransmissions = 3
+
 // Message is a message reference which is used to match future
 // received SURB replies.
 type Message struct {
@@ -60,6 +63,12 @@ type Message struct {
 
 	// SURBType is the SURB type.
 	SURBType int
+
+	// Reliable enables Automatic Repeat Request mode.
+	Reliable bool
+
+	// Transmissions is the number of times this message has been transmitted.
+	Transmissions int
 }
 
 func (m *Message) expiry() uint64 {
@@ -97,6 +106,13 @@ func (s *Session) sendNext() error {
 }
 
 func (s *Session) doSend(msg *Message) error {
+	if msg.Transmissions > 0 {
+		// XXX:remove the old surb from map, it has expired
+		if msg.Transmissions >= maxTransmissions {
+			// XXX: return failure upstream somehow
+			return nil
+		}
+	}
 	surbID := [sConstants.SURBIDLength]byte{}
 	io.ReadFull(rand.Reader, surbID[:])
 	key, eta, err := s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
@@ -106,6 +122,10 @@ func (s *Session) doSend(msg *Message) error {
 	msg.Key = key
 	msg.SentAt = time.Now()
 	msg.ReplyETA = eta
+	msg.Transmissions++
+	if msg.Reliable {
+		s.tq.Push(msg)
+	}
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
 	s.surbIDMap[surbID] = msg
