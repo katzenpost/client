@@ -174,13 +174,19 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, que
 	return &msg, nil
 }
 
-// SendQuery sends a mixnet provider-side service query.
+// SendUnreliableQuery sends a mixnet provider-side service query.
 func (s *Session) SendUnreliableQuery(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
+	return s.SendQuery(recipient, provider, message, false)
+}
+
+// SendQuery sends a mixnet provider-side service query.
+func (s *Session) SendQuery(recipient, provider string, message []byte, reliable bool) (*[cConstants.MessageIDLength]byte, error) {
 	msg, err := s.composeMessage(recipient, provider, message, true)
 	if err != nil {
 		return nil, err
 	}
 
+	msg.Reliable = reliable
 	s.mapLock.Lock()
 	s.replyNotifyMap[*msg.ID] = new(sync.Mutex)
 	s.replyNotifyMap[*msg.ID].Lock()
