@@ -81,9 +81,6 @@ func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) []byte {
 }
 
 func (s *Session) sendNext() error {
-	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
-
 	msg, err := s.egressQueue.Peek()
 	if err != nil {
 		return err
@@ -170,8 +167,6 @@ func (s *Session) SendUnreliableQuery(recipient, provider string, message []byte
 	s.messageIDMap[*msg.ID] = msg
 	s.mapLock.Unlock()
 
-	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err

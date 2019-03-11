@@ -73,7 +73,6 @@ type Session struct {
 	hasPKIDoc bool
 
 	egressQueue     EgressQueue
-	egressQueueLock *sync.Mutex
 
 	surbIDMap      map[[sConstants.SURBIDLength]byte]*Message
 	messageIDMap   map[[cConstants.MessageIDLength]byte]*Message
@@ -118,7 +117,6 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.mapLock = new(sync.Mutex)
 
 	s.egressQueue = new(Queue)
-	s.egressQueueLock = new(sync.Mutex)
 
 	id := cfg.Account.User + "@" + cfg.Account.Provider
 	basePath := filepath.Join(cfg.Proxy.DataDir, id)
