@@ -78,20 +78,18 @@ func (a *TimerQ) Remove(m *Message) error {
 	} else {
 		mo := a.priq.Remove(m.expiry())
 		switch mo {
-		case m:
+		case m == mo.(*Message):
 		case nil:
-			a.s.log.Debugf("Failed to remove %v from queue, already gone", m)
 		default:
-			a.s.log.Errorf("Removed wrong item from queue! Re-enqueuing")
-			defer a.Enqueue(mo.(*Message))
 			return fmt.Errorf("Failed to remove %v", m)
+			defer a.Push(mo.(*Message))
 		}
 	}
 	return nil
 }
 
-func (a *ARQ) wakeupCh() chan struct{} {
-	a.s.log.Debug("wakeupCh()")
+// wakeupCh() returns the channel that fires upon Signal of the TimerQ's sync.Cond
+func (a *TimerQ) wakeupCh() chan struct{} {
 	if a.wakech != nil {
 		return a.wakech
 	}
@@ -105,10 +103,8 @@ func (a *ARQ) wakeupCh() chan struct{} {
 			a.L.Unlock()
 			select {
 			case <-a.HaltCh():
-				a.s.log.Debugf("CondCh worker() returning")
 				return
 			case c <- v:
-				a.s.log.Debugf("CondCh worker() writing")
 			}
 		}
 	}()
@@ -116,57 +112,43 @@ func (a *ARQ) wakeupCh() chan struct{} {
 	return c
 }
 
-func (a *ARQ) reschedule() {
-	a.s.log.Debugf("Timer fired at %s", time.Now())
+// pop top item from queue and forward to next queue
+func (a *TimerQ) forward() {
 	a.Lock()
 	m := a.priq.Pop()
 	a.Unlock()
 	if m == nil {
-		panic("We've done something wrong here...")
-	}
-	// XXX should lock m
-	if len(m.Value.(*Message).Reply) > 0 {
-		// Already ACK'd
 		return
 	}
-	a.s.log.Debugf("Rescheduling msg[%x]", m.Value.(*Message).ID)
-	a.s.egressQueueLock.Lock()
-	err := a.s.egressQueue.Push(m.Value.(*Message))
-	a.s.egressQueueLock.Unlock()
-	if err != nil {
+
+
+	if err := a.nextQ.Push(m.Value.(*Message)); err != nil {
 		panic(err)
 	}
 }
 
-func (a *ARQ) worker() {
+func (a *TimerQ) worker() {
 	for {
-		a.s.log.Debugf("Loop0")
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
 			msg := m.Value.(*Message)
 			tl := msg.timeLeft()
 			if tl < 0 {
-				a.s.log.Debugf("Queue behind schedule %v", tl)
 				a.Unlock()
-				a.reschedule()
+				a.forward()
 				continue
 			} else {
-				a.s.log.Debugf("Setting timer for msg[%x]: %d", msg.ID, tl)
 				a.timer.Stop()
 				a.timer.Reset(tl)
 			}
-		} else {
-			a.s.log.Debug("Nothing in priq")
 		}
 		a.Unlock()
 		select {
-		case <-a.s.HaltCh():
-			a.s.log.Debugf("Terminating gracefully")
+		case <-a.HaltCh():
 			return
 		case <-a.timer.C:
-			a.reschedule()
+			a.forward()
 		case <-a.wakeupCh():
-			a.s.log.Debugf("Woke")
 		}
 	}
 }

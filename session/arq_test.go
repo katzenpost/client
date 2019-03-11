@@ -18,48 +18,28 @@ package session
 
 import (
 	"io"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewARQ(t *testing.T) {
-	assert := assert.New(t)
-
-	s := &Session{}
-
-	logBackend, err := log.New("", "DEBUG", false)
-	assert.NoError(err)
-	s.log = logBackend.GetLogger("arq_test")
-
-	// create an egressQueue for rescheduled messages
+func TestNewTimerQ(t *testing.T) {
+	// create a Queue for rescheduled messages
 	q := new(Queue)
-	s.egressQueue = q
-	s.egressQueueLock = new(sync.Mutex)
 
-	a := NewARQ(s)
-	a.s.Halt()
+	a := NewTimerQ(q)
+	a.Halt()
 }
 
-func TestARQEnqueue(t *testing.T) {
+func TestTimerQPush(t *testing.T) {
 	assert := assert.New(t)
 
-	s := &Session{}
-
-	logBackend, err := log.New("", "DEBUG", false)
-	assert.NoError(err)
-	s.log = logBackend.GetLogger("arq_test")
-
-	// create an egressQueue for rescheduled messages
+	// create a queue for rescheduled messages
 	q := new(Queue)
-	s.egressQueue = q
-	s.egressQueueLock = new(sync.Mutex)
 
-	a := NewARQ(s)
+	a := NewTimerQ(q)
 
 	// enqueue 10 messages
 	for i := 0; i < 10; i++ {
@@ -69,49 +49,38 @@ func TestARQEnqueue(t *testing.T) {
 		m.SentAt = time.Now()
 		m.ReplyETA = 200 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
-		a.Enqueue(m)
+		a.Push(m)
 		<-time.After(1 * time.Millisecond)
 	}
-	a.s.log.Debugf("Sent 10 messages")
+	t.Logf("Sent 10 messages")
 
-	// wait for all of the timers to expire and each message to be enqueued in egressQueue
+	// wait for all of the timers to expire and each message to be enqueued in q
 	<-time.After(1 * time.Second)
 
-	s.egressQueueLock.Lock()
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
 	j := 0
 	for {
-		_, err := s.egressQueue.Pop()
+		_, err := q.Pop()
 		if err == ErrQueueEmpty {
 			break
 		}
 		j++
 	}
-	a.s.log.Debugf("Pop() %d messages", j)
+	t.Logf("Pop() %d messages", j)
 
-	// Verify that all messages were placed into egressQueue
+	// Verify that all messages were placed into q
 	assert.Equal(10, j)
-	s.egressQueueLock.Unlock()
-	a.s.Halt()
+	a.Halt()
 }
 
-func TestARQRemove(t *testing.T) {
+func TestTimerQRemove(t *testing.T) {
 	assert := assert.New(t)
 
-	s := &Session{}
-
-	logBackend, err := log.New("", "DEBUG", false)
-	assert.NoError(err)
-	s.log = logBackend.GetLogger("arq_test")
-
-	// create an egressQueue for rescheduled messages
+	// create a Queue for forwarded messages
 	q := new(Queue)
-	s.egressQueue = q
-	s.egressQueueLock = new(sync.Mutex)
 
-	a := NewARQ(s)
+	a := NewTimerQ(q)
 
-	// enqueue 10 messages, and call ARQ.Remove() on half of them before their timers expire
+	// enqueue 10 messages, and call TimerQ.Remove() on half of them before their timers expire
 	for i := 0; i < 10; i++ {
 		m := &Message{}
 		m.ID = new([16]byte)
@@ -119,33 +88,28 @@ func TestARQRemove(t *testing.T) {
 		m.SentAt = time.Now()
 		m.ReplyETA = 100 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
-		a.Enqueue(m)
+		a.Push(m)
 		<-time.After(20 * time.Millisecond)
 		if i%2 == 0 {
-			m.Reply = []byte("A")
 			er := a.Remove(m)
 			assert.NoError(er)
 		}
 		<-time.After(80 * time.Millisecond)
 	}
-	a.s.log.Debugf("Sent 10 messages")
+	t.Logf("Sent 10 messages")
 	<-time.After(2 * time.Second)
 
-	s.egressQueueLock.Lock()
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
 	j := 0
 	for {
-		_, err := s.egressQueue.Pop()
+		_, err := q.Pop()
 		if err == ErrQueueEmpty {
 			break
 		}
 		j++
 	}
-	a.s.log.Debugf("Popped %d messages", j)
+	t.Logf("Popped %d messages", j)
 
-	// verify that half of the messages were sent to egressQueue
+	// verify that half of the messages were sent to q
 	assert.Equal(5, j)
-	a.s.log.Debugf("egressQueue.len: %d", q.len)
-	s.egressQueueLock.Unlock()
-	a.s.Halt()
+	a.Halt()
 }

@@ -49,7 +49,7 @@ import (
 type Session struct {
 	worker.Worker
 
-	arq       *ARQ
+	tq        *TimerQ
 	cfg       *config.Config
 	pkiClient pki.Client
 	minclient *minclient.Client
@@ -162,7 +162,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.setTimers(doc)
 
 	s.Go(s.worker)
-	s.arq = NewARQ(s)
+	s.tq = NewTimerQ(s.egressQueue) // XXX: should be placed into exponential backoff / drop queue
 	return s, nil
 }
 
@@ -286,7 +286,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}
 	delete(s.surbIDMap, *msg.SURBID)
-	s.arq.Remove(msg)
+	s.tq.Remove(msg)
 	return nil
 }
 
