@@ -44,6 +44,7 @@ const (
 	defaultLogLevel                    = "NOTICE"
 	defaultPollingInterval             = 10
 	defaultInitialMaxPKIRetrievalDelay = 10
+	defaultSessionDialTimeout          = 10
 )
 
 var defaultLogging = Logging{
@@ -92,6 +93,8 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
+	DisableDecoyLoops bool
+
 	// SessionDialTimeout is the number of seconds that a session dial
 	// is allowed to take until it is cancelled.
 	SessionDialTimeout int
@@ -122,6 +125,9 @@ func (d *Debug) fixup() {
 	}
 	if d.InitialMaxPKIRetrievalDelay == 0 {
 		d.InitialMaxPKIRetrievalDelay = defaultInitialMaxPKIRetrievalDelay
+	}
+	if d.SessionDialTimeout == 0 {
+		d.SessionDialTimeout = defaultSessionDialTimeout
 	}
 }
 
