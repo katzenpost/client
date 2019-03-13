@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"container/heap"
 	"github.com/katzenpost/core/queue"
 	"github.com/katzenpost/core/worker"
 )
@@ -68,17 +69,17 @@ func (a *TimerQ) Remove(m *Message) error {
 	defer a.Unlock()
 	if mo := a.priq.Peek(); mo != nil {
 		if mo.Value.(*Message) == m {
-			a.priq.Pop()
+			heap.Pop(a.priq)
 			if a.priq.Len() > 0 {
 				// wake up the worker to reset the timer
 				a.Signal()
 			}
 		}
 	} else {
-		mo := a.priq.Remove(m.expiry())
+		mo := a.priq.RemovePriority(m.expiry())
 		switch mo {
-		case m == mo.(*Message):
 		case nil:
+		case m == mo.(*Message):
 		default:
 			return fmt.Errorf("Failed to remove %v", m)
 			defer a.Push(mo.(*Message))
@@ -114,13 +115,13 @@ func (a *TimerQ) wakeupCh() chan struct{} {
 // pop top item from queue and forward to next queue
 func (a *TimerQ) forward() {
 	a.Lock()
-	m := a.priq.Pop()
+	m := heap.Pop(a.priq)
 	a.Unlock()
 	if m == nil {
 		return
 	}
 
-	if err := a.nextQ.Push(m.Value.(*Message)); err != nil {
+	if err := a.nextQ.Push(m.(*queue.Entry).Value.(*Message)); err != nil {
 		panic(err)
 	}
 }
