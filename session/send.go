@@ -176,12 +176,17 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, que
 
 // SendUnreliableQuery sends a mixnet provider-side service query.
 func (s *Session) SendUnreliableQuery(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
-	return s.SendQuery(recipient, provider, message, false)
+	return s.SendMessage(recipient, provider, message, false, true)
 }
 
-// SendQuery sends a mixnet provider-side service query.
-func (s *Session) SendQuery(recipient, provider string, message []byte, reliable bool) (*[cConstants.MessageIDLength]byte, error) {
-	msg, err := s.composeMessage(recipient, provider, message, true)
+// SendReliableQuery sends a mixnet provider-side service query with automatic retransmissions enabled
+func (s *Session) SendReliableQuery(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
+	return s.SendMessage(recipient, provider, message, true, true)
+}
+
+// SendMessage sends a mixnet message
+func (s *Session) SendMessage(recipient, provider string, message []byte, reliable, query bool) (*[cConstants.MessageIDLength]byte, error) {
+	msg, err := s.composeMessage(recipient, provider, message, query)
 	if err != nil {
 		return nil, err
 	}
