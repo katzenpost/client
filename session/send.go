@@ -72,8 +72,7 @@ type Message struct {
 }
 
 func (m *Message) expiry() uint64 {
-	// TODO: add exponential backoff
-	return uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
+	return uint64(m.SentAt.Add(m.ReplyETA/2).Add(time.Duration(m.Transmissions+1)*m.ReplyETA).UnixNano())
 }
 
 func (m *Message) timeLeft() time.Duration {
