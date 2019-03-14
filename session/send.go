@@ -82,6 +82,7 @@ func (m *Message) timeLeft() time.Duration {
 
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) []byte {
+	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
 	s.mapLock.Lock()
 	replyLock := s.replyNotifyMap[*msgId]
 	s.mapLock.Unlock()

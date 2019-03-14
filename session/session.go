@@ -281,6 +281,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		msg.Reply = plaintext[2:]
 		s.replyNotifyMap[*msg.ID].Unlock()
+		s.messageIDMap[*msg.ID] = msg
 		delete(s.replyNotifyMap, *msg.ID)
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
