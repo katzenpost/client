@@ -68,7 +68,7 @@ func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) []byte {
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
 	replyLock := s.replyNotifyMap[*msgId]
-	replyLock.Lock()
+	defer replyLock.Lock()
 	return s.messageIDMap[*msgId].Reply
 }
 
