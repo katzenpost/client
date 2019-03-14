@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
@@ -160,8 +161,32 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.setTimers(doc)
 
 	s.Go(s.worker)
-	s.tq = NewTimerQ(s.egressQueue) // XXX: should be placed into exponential backoff / drop queue
+	s.tq = NewTimerQ(DelayQueue{nextQ: s.egressQueue, s: s, Lambda: doc.SendLambda, Max: doc.SendMaxInterval})
 	return s, nil
+}
+
+type DelayQueue struct {
+	Queue
+	nextQ EgressQueue
+	s *Session
+	Lambda float64
+	Max uint64
+}
+
+func (d DelayQueue) Push(e *Message) error {
+	wakeMsec := uint64(rand.Exp(rand.NewMath(), d.Lambda))
+	switch {
+	case wakeMsec > d.Max:
+		wakeMsec = d.Max
+	default:
+	}
+	d.s.log.Debugf("Re-enqueuing dropped message %v after %d ms", *e.ID, wakeMsec)
+	wakeInterval := time.Duration(wakeMsec) * time.Millisecond
+	go func() {
+		<-time.After(wakeInterval)
+		d.nextQ.Push(e)
+	}()
+	return nil
 }
 
 func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
