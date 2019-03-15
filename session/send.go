@@ -108,13 +108,6 @@ func (s *Session) sendNext() error {
 }
 
 func (s *Session) doSend(msg *Message) error {
-	if msg.Transmissions > 0 {
-		// XXX:remove the old surb from map, it has expired
-		if msg.Transmissions >= maxTransmissions {
-			// XXX: return failure upstream somehow
-			return nil
-		}
-	}
 	surbID := [sConstants.SURBIDLength]byte{}
 	io.ReadFull(rand.Reader, surbID[:])
 	key, eta, err := s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)

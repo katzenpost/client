@@ -180,10 +180,11 @@ func (d DelayQueue) Push(e *Message) error {
 		wakeMsec = d.Max
 	default:
 	}
-	d.s.log.Debugf("Re-enqueuing dropped message %v after %d ms", *e.ID, wakeMsec)
+	d.s.log.Debugf("Re-enqueuing dropped message %x after %d ms", *e.ID, wakeMsec)
 	wakeInterval := time.Duration(wakeMsec) * time.Millisecond
 	go func() {
 		<-time.After(wakeInterval)
+		d.s.minclient.ForceFetch()
 		d.nextQ.Push(e)
 	}()
 	return nil
