@@ -180,6 +180,9 @@ func (d DelayQueue) Push(e *Message) error {
 		wakeMsec = d.Max
 	default:
 	}
+	if e.Transmissions > 3 {
+		return nil
+	}
 	d.s.log.Debugf("Re-enqueuing dropped message %x after %d ms", *e.ID, wakeMsec)
 	wakeInterval := time.Duration(wakeMsec) * time.Millisecond
 	go func() {
