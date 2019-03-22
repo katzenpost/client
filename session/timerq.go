@@ -74,15 +74,15 @@ func (a *TimerQ) Remove(m *Message) error {
 				// wake up the worker to reset the timer
 				a.Signal()
 			}
-		}
-	} else {
-		mo := a.priq.RemovePriority(m.expiry())
-		switch mo {
-		case nil:
-		case m == mo.(*Message):
-		default:
-			return fmt.Errorf("Failed to remove %v", m)
-			defer a.Push(mo.(*Message))
+		} else {
+			mo := a.priq.RemovePriority(m.expiry())
+			switch mo {
+			case nil:
+			case m == mo.(*Message):
+			default:
+				return fmt.Errorf("Failed to remove %v", m)
+				defer a.Push(mo.(*Message))
+			}
 		}
 	}
 	return nil
