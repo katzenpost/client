@@ -18,6 +18,7 @@ package session
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -272,12 +273,14 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		waitCh, ok := s.waitChans[*msg.ID]
 		if ok {
-			select {
-			case waitCh <- &MessageReplyEvent{
+			replyLen := binary.BigEndian.Uint32(plaintext[2 : 2+4])
+			messageReplyEvent := &MessageReplyEvent{
 				MessageID: msg.ID,
-				Payload:   plaintext[2:],
+				Payload:   plaintext[2+4 : replyLen+4+2],
 				Err:       nil,
-			}:
+			}
+			select {
+			case waitCh <- messageReplyEvent:
 			case <-time.After(3 * time.Second):
 				s.log.Warning("Message Reply Event send timeout failure.")
 			}
