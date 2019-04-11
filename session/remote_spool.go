@@ -22,10 +22,16 @@ import (
 	"strings"
 
 	"github.com/katzenpost/client/multispool"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/minclient/block"
 )
 
-const OKStatus = "OK"
+const (
+	OKStatus     = "OK"
+	SpoolService = "spool"
+)
 
 func (s *Session) submitCommand(cmd []byte, recipient, provider string) (*multispool.SpoolResponse, error) {
 	reply, err := s.SendUnreliableMessage(recipient, provider, cmd)
@@ -98,4 +104,120 @@ func (s *Session) ReadFromSpool(spoolID []byte, messageID uint32,
 		return nil, err
 	}
 	return s.submitCommand(cmd, recipient, provider)
+}
+
+type UnreliableSpoolReader struct {
+	session               *Session
+	spoolProvider         string
+	spoolReceiver         string
+	spoolID               []byte
+	spoolPrivateKey       *eddsa.PrivateKey
+	noisePrivateKey       *ecdh.PrivateKey
+	partnerNoisePublicKey *ecdh.PublicKey
+	spoolIndex            uint32
+}
+
+func CreateUnreliableSpoolReader(session *Session, partnerNoisePublicKey *ecdh.PublicKey) (*UnreliableSpoolReader, error) {
+	descriptor, err := session.GetService(SpoolService)
+	if err != nil {
+		return nil, err
+	}
+	spoolPrivateKey, err := eddsa.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	noisePrivateKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	spoolID, err := session.CreateSpool(spoolPrivateKey, descriptor.Name, descriptor.Provider)
+	if err != nil {
+		return nil, err
+	}
+	return &UnreliableSpoolReader{
+		session:               session,
+		spoolProvider:         descriptor.Provider,
+		spoolReceiver:         descriptor.Name,
+		spoolID:               spoolID,
+		spoolPrivateKey:       spoolPrivateKey,
+		noisePrivateKey:       noisePrivateKey,
+		partnerNoisePublicKey: partnerNoisePublicKey,
+		spoolIndex:            1,
+	}, nil
+}
+
+func (r *UnreliableSpoolReader) Read() ([]byte, error) {
+	spoolResponse, err := r.session.ReadFromSpool(r.spoolID[:], r.spoolIndex, r.spoolPrivateKey, r.spoolReceiver, r.spoolProvider)
+	if err != nil {
+		return nil, err
+	}
+	if spoolResponse.Status != "OK" {
+		return nil, errors.New(spoolResponse.Status)
+	}
+	r.spoolIndex++
+	block, pubKey, err := block.DecryptBlock(spoolResponse.Message, r.noisePrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	if !r.partnerNoisePublicKey.Equal(pubKey) {
+		return nil, errors.New("wtf, wrong partner Noise X key")
+	}
+	if block.TotalBlocks != 1 {
+		return nil, errors.New("block error, one block per message required")
+	}
+	return block.Payload, nil
+}
+
+type UnreliableSpoolWriter struct {
+	session               *Session
+	spoolProvider         string
+	spoolReceiver         string
+	spoolID               []byte
+	noisePrivateKey       *ecdh.PrivateKey
+	partnerNoisePublicKey *ecdh.PublicKey
+}
+
+func CreateUnreliableSpoolWriter(session *Session, spoolID []byte, spoolReceiver string, spoolProvider string, partnerNoisePublicKey *ecdh.PublicKey) (*UnreliableSpoolWriter, error) {
+	noisePrivateKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return &UnreliableSpoolWriter{
+		session:               session,
+		spoolProvider:         spoolProvider,
+		spoolReceiver:         spoolReceiver,
+		spoolID:               spoolID,
+		noisePrivateKey:       noisePrivateKey,
+		partnerNoisePublicKey: partnerNoisePublicKey,
+	}, nil
+}
+
+func (r *UnreliableSpoolWriter) Write(message []byte) error {
+	mesgID := [block.MessageIDLength]byte{}
+	_, err := rand.NewMath().Read(mesgID[:])
+	if err != nil {
+		return nil
+	}
+	blocks, err := block.EncryptMessage(&mesgID, message, r.noisePrivateKey, r.partnerNoisePublicKey)
+	if err != nil {
+		return nil
+	}
+	if len(blocks) != 1 {
+		return errors.New("message fragmentation not yet supported")
+	}
+	err = r.session.AppendToSpool(r.spoolID[:], message, r.spoolReceiver, r.spoolProvider)
+	return err
+}
+
+type UnreliableSpoolReaderWriter struct {
+	reader *UnreliableSpoolReader
+	writer *UnreliableSpoolWriter
+}
+
+func (s *UnreliableSpoolReaderWriter) Read() ([]byte, error) {
+	return s.reader.Read()
+}
+
+func (s *UnreliableSpoolReaderWriter) Write(message []byte) error {
+	return s.writer.Write(message)
 }
