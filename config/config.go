@@ -409,6 +409,30 @@ func Load(b []byte) (*Config, error) {
 	return cfg, nil
 }
 
+// GenerateKeys makes the key dir and then
+// generates the keys and saves them into pem files
+func GenerateKeys(cfg *Config) error {
+	id := cfg.Account.User + "@" + cfg.Account.Provider
+	basePath := filepath.Join(cfg.Proxy.DataDir, id)
+	if err := utils.MkDataDir(basePath); err != nil {
+		return err
+	}
+	_, err := LoadLinkKey(basePath)
+	return err
+}
+
+// LoadLinkKey can load or generate the keys
+func LoadLinkKey(basePath string) (*ecdh.PrivateKey, error) {
+	linkPriv := filepath.Join(basePath, "link.private.pem")
+	linkPub := filepath.Join(basePath, "link.public.pem")
+	var err error
+	linkKey := new(ecdh.PrivateKey)
+	if linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+		return nil, err
+	}
+	return linkKey, nil
+}
+
 // LoadFile loads, parses, and validates the provided file and returns the
 // Config.
 func LoadFile(f string) (*Config, error) {
