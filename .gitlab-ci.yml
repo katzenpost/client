@@ -3,10 +3,9 @@ image: "golang:1.12"
 variables:
   GO111MODULE: "on"
 
-before_script:
-  - cp -r /builds/katzenpost /go/src/github.com/katzenpost/
-  - cd /go/src/github.com/katzenpost/client
-
 test-client:
   script:
-    - go test -v -cover -race -timeout 0 -ldflags "-X github.com/katzenpost/client/vendor/github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/client/vendor/github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./...
+   - apt install docker docker-compose
+   - git clone https://github.com/katzenpost/docker.git
+   - cd docker
+   - docker-compose start
