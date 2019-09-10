@@ -18,23 +18,26 @@
 package client
 
 import (
+	"io/ioutil"
 	"path/filepath"
-	"sync"
+	//"sync"
 	"testing"
 	"time"
 
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/kimchi"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	//"github.com/stretchr/testify/require"
 )
 
 const basePort = 30000
 
 // TestClientConnect tests that a client can connect and send a message to the loop service
 func TestClientConnect(t *testing.T) {
-	t.Parallel()
+	t.Log("yo\n\n")
+
 	assert := assert.New(t)
+
 	voting := true
 	nVoting := 3
 	nProvider := 2
@@ -51,7 +54,7 @@ func TestClientConnect(t *testing.T) {
 		t.Logf("Time is up!")
 
 		// create a client configuration
-		cfg, err := k.GetClientConfig()
+		cfg, username, linkKey, err := k.GetClientConfig()
 		assert.NoError(err)
 
 		// instantiate a client instance
@@ -59,10 +62,15 @@ func TestClientConnect(t *testing.T) {
 		assert.NoError(err)
 
 		// add client log output
-		go k.LogTailer(cfg.Account.User, filepath.Join(cfg.Proxy.DataDir, cfg.Logging.File))
+		tmpDir, err := ioutil.TempDir("", "katzenpost_client_test")
+		if err != nil {
+			panic(err)
+		}
+		cfg.Account.User = username
+		go k.LogTailer(cfg.Account.User, filepath.Join(tmpDir, cfg.Logging.File))
 
 		// instantiate a session
-		s, err := c.NewSession()
+		s, err := c.NewSession(linkKey)
 		assert.NoError(err)
 
 		// get a PKI document? needs client method...
@@ -71,18 +79,19 @@ func TestClientConnect(t *testing.T) {
 
 		// send a message
 		t.Logf("desc.Provider: %s", desc.Provider)
-		id, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
+		_, err = s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
 		assert.NoError(err)
 
-		_, err = s.WaitForReply(id)
 		c.Shutdown()
 		c.Wait()
 	}()
 
 	k.Wait()
 	t.Logf("Terminated.")
+
 }
 
+/*
 // TestReliableDelivery verifies that all messages sent were delivered
 func NoTestReliableDelivery(t *testing.T) {
 	t.Parallel()
@@ -129,7 +138,7 @@ func NoTestReliableDelivery(t *testing.T) {
 		// send a message
 		t.Logf("desc.Provider: %s", desc.Provider)
 
-		/* // SendMessage not available in client yet
+		 // SendMessage not available in client yet
 		for i := 0; i < 10; i++ {
 			msgid, err := s.SendMessage(desc.Name, desc.Provider, []byte("hello!"), true, true)
 			require.NoError(err)
@@ -147,7 +156,7 @@ func NoTestReliableDelivery(t *testing.T) {
 			}
 			close(ch)
 		}
-		*/
+
 		c.Shutdown()
 		c.Wait()
 	}()
@@ -206,7 +215,7 @@ func NoTestMultipleClients(t *testing.T) {
 				// send a message
 				t.Logf("desc.Provider: %s", desc.Provider)
 
-				/* // disabled until client supports Sendmessage
+				 // disabled until client supports Sendmessage
 				for i := 0; i < 100; i++ {
 					msgid, err := s.SendMessage(desc.Name, desc.Provider, []byte("hello!"), true, true)
 					require.NoError(err)
@@ -230,7 +239,7 @@ func NoTestMultipleClients(t *testing.T) {
 					close(ch)
 					close(die)
 				}
-				*/
+
 				c.Shutdown()
 				c.Wait()
 				wg.Done()
@@ -305,3 +314,4 @@ func NoTestClientReceiveMessage(t *testing.T) {
 	k.Wait()
 	t.Logf("Terminated.")
 }
+*/
