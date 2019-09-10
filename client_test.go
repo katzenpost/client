@@ -59,7 +59,7 @@ func TestClientConnect(t *testing.T) {
 		go k.LogTailer(username, cfg.Logging.File)
 
 		// instantiate a session
-		s, err := c.NewSession(username, linkKey)
+		s, err := c.NewSession(linkKey)
 		assert.NoError(err)
 
 		// get a PKI document? needs client method...
