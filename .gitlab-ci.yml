@@ -1,11 +1,8 @@
-image: "golang:1.12"
-
-variables:
-  GO111MODULE: "on"
+image: "golang:1.13"
 
 before_script:
-  - cp -r /builds/katzenpost /go/src/github.com/katzenpost/
-  - cd /go/src/github.com/katzenpost/client
+  - git clone https://github.com/katzenpost/client
+  - cd client
 
 test-client:
   script:
