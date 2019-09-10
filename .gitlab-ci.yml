@@ -2,6 +2,7 @@ image: "golang:1.13"
 
 before_script:
   - git clone https://github.com/katzenpost/client
+  - go build
   - cd client
 
 test-client:
