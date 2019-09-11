@@ -45,6 +45,7 @@ github.com/katzenpost/kimchi v0.0.0-20190910182539-1b4fd54798e6/go.mod h1:yUW0qM
 github.com/katzenpost/memspool v0.0.1/go.mod h1:0pUZ4ZsVRbpkcymI1t6p2JiLz4DorRncXAS2if7fDdQ=
 github.com/katzenpost/minclient v0.0.5 h1:lUPG4D7MQkBb1qEQOx/EFKjrJMVZJOLctiSUY1sWJ5I=
 github.com/katzenpost/minclient v0.0.5/go.mod h1:iP6HqTQzuNuyMYhzXL6pPWwthAmB7AgFEEGMm2G0XVc=
+github.com/katzenpost/minclient v0.0.6-0.20190907184312-6af60bbe31b6 h1:ZpASslART+fPvVpHtx+DV3SLdpthoG85lmFeSURjkqs=
 github.com/katzenpost/minclient v0.0.6-0.20190907184312-6af60bbe31b6/go.mod h1:hvJRcp9WMc8WAPemJEc+JtyTFA++u2zI6rhLX6feYP0=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
