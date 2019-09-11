@@ -2,14 +2,8 @@ image: docker:latest
 
 services:
   - docker
-go:
-  - "1.12"
-env:
-  global:
-    GO111MODULE=on
-build:
-  stage: build
-  script:
+
+before_script:
     - git clone https://github.com/katzenpost/server.git; cd server
     - docker build -t katzenpost/server .; cd ..
     - git clone https://github.com/katzenpost/authority.git; cd authority
@@ -17,5 +11,8 @@ build:
     - git clone https://github.com/katzenpost/docker.git; cd docker
     - docker-compose up -d; cd ..
     - sleep 120
+
+client_test:
+  script:
     - go test -v
     - cd docker; docker-compose stop
