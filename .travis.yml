@@ -15,5 +15,6 @@ script:
     - git clone https://github.com/katzenpost/docker.git; cd docker
     - docker-compose up -d; cd ..
     - sleep 120
-    - go test -v
+    - docker build -t katzenpost/client_test .
+    - docker run katzenpost/client_test
     - cd docker; docker-compose stop
