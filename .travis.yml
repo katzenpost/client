@@ -1,11 +1,18 @@
 language: go
 
+services:
+  - docker
 go:
   - "1.12"
-
 env:
   global:
     GO111MODULE=on
-
 script:
-  - go test -v -cover -race -timeout 0 -ldflags "-X github.com/katzenpost/client/vendor/github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/client/vendor/github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./...
+    - git clone https://github.com/katzenpost/server.git; cd server
+    - docker build -t katzenpost/server .; cd ..
+    - git clone https://github.com/katzenpost/authority.git; cd authority
+    - docker build -t katzenpost/authority .; cd ..
+    - git clone https://github.com/katzenpost/docker.git; cd docker
+    - docker-compose start
+    - sleep 10
+    - docker-compose stop
