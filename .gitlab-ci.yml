@@ -1,21 +1,23 @@
-image: docker:latest
+image: docker:19.03.1
 
 variables:
-  GO111MODULE: "on"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
 
-test-client:
+services:
+  - docker:19.03.1-dind
+
+before_script:
+  - docker info
+
+build:
+  stage: build
   script:
-   - sudo apt update
-   - apt install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common
-   - curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
-   - apt-key fingerprint 0EBFCD88
-   - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
-   - apt update
-   - apt install -y docker-ce docker-ce-cli containerd.io
-   - curl -L "https://github.com/docker/compose/releases/download/1.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-   - chmod +x /usr/local/bin/docker-compose
-   - git clone https://github.com/katzenpost/docker.git
-   - cd docker
-   - service docker start
-   - docker-compose start
-
+    - git clone https://github.com/katzenpost/server.git; cd server
+    - docker build -t katzenpost/server .; cd ..
+    - git clone https://github.com/katzenpost/authority.git; cd authority
+    - docker build -t katzenpost/authority .; cd ..
+    - git clone https://github.com/katzenpost/docker.git; cd docker
+    - docker-compose start
+    - sleep 10
+    - docker-compose stop
