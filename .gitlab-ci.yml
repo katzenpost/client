@@ -1,4 +1,4 @@
-image: docker:latest
+image: "golang:1.13"
 
 services:
   - docker
