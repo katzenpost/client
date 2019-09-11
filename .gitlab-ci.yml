@@ -1,12 +1,12 @@
 image: docker:latest
 
 services:
-  - docker:dind
-
-before_script:
-  - docker info
-  - docker-compose --version
-
+  - docker
+go:
+  - "1.12"
+env:
+  global:
+    GO111MODULE=on
 build:
   stage: build
   script:
@@ -15,6 +15,7 @@ build:
     - git clone https://github.com/katzenpost/authority.git; cd authority
     - docker build -t katzenpost/authority .; cd ..
     - git clone https://github.com/katzenpost/docker.git; cd docker
-    - docker-compose start
-    - sleep 10
-    - docker-compose stop
+    - docker-compose up -d; cd ..
+    - sleep 120
+    - go test -v
+    - cd docker; docker-compose stop
