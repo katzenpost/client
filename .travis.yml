@@ -13,6 +13,6 @@ script:
     - git clone https://github.com/katzenpost/authority.git; cd authority
     - docker build -t katzenpost/authority .; cd ..
     - git clone https://github.com/katzenpost/docker.git; cd docker
-    - docker-compose start
+    - docker-compose up -d
     - sleep 10
     - docker-compose stop
