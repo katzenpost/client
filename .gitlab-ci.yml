@@ -4,6 +4,7 @@ services:
   - docker:dind
 
 before_script:
+    - apt install git golang
     - git clone https://github.com/katzenpost/server.git; cd server
     - docker build -t katzenpost/server .; cd ..
     - git clone https://github.com/katzenpost/authority.git; cd authority
