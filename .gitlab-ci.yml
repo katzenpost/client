@@ -5,7 +5,7 @@ services:
 
 before_script:
     - apk update
-    - apk add git golang ca-certificates
+    - apk add git go ca-certificates
     - git clone https://github.com/katzenpost/server.git; cd server
     - docker build -t katzenpost/server .; cd ..
     - git clone https://github.com/katzenpost/authority.git; cd authority
