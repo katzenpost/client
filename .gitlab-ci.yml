@@ -1,7 +1,7 @@
 image: docker:latest
 
 services:
-  - docker:dind
+  - docker
 
 before_script:
     - apk update
