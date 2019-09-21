@@ -4,9 +4,9 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/katzenpost/authority v0.0.9-0.20190907184439-988189a151b2
-	github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d
-	github.com/katzenpost/kimchi v0.0.0-20190919180141-c3fbd2593e78
+	github.com/katzenpost/authority v0.0.9-0.20190911162358-f26c00bab95d
+	github.com/katzenpost/core v0.0.8-0.20190916144859-1342f2214ce3
+	github.com/katzenpost/kimchi v0.0.0-20190920152505-0ced4b468812
 	github.com/katzenpost/minclient v0.0.6-0.20190907184312-6af60bbe31b6
 	github.com/katzenpost/registration_client v0.0.1
 	github.com/stretchr/testify v1.4.0
