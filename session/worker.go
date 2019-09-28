@@ -144,7 +144,7 @@ func (s *Session) worker() {
 		if qo != nil {
 			switch op := qo.(type) {
 			case opIsEmpty:
-				// XXX do periodic cleanup here
+				// I don't think we need to do anything here.
 				continue
 			case opConnStatusChanged:
 				isConnected = s.connStatusChange(op)

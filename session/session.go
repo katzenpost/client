@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/client/config"
-	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/client/utils"
@@ -127,6 +126,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	}
 
 	s.Go(s.eventSinkWorker)
+	s.Go(s.garbageCollectionWorker)
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
@@ -159,6 +159,42 @@ func (s *Session) eventSinkWorker() {
 			}
 		}
 	}
+}
+
+func (s *Session) garbageCollectionWorker() {
+	const garbageCollectionInterval = 10 * time.Minute
+	timer := time.NewTimer(garbageCollectionInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-s.HaltCh():
+			s.log.Debugf("Garbage collection worker terminating gracefully.")
+			return
+		case <-timer.C:
+			s.garbageCollect()
+			timer.Reset(garbageCollectionInterval)
+		}
+	}
+}
+
+func (s *Session) garbageCollect() {
+	// [sConstants.SURBIDLength]byte -> *Message
+	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
+		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
+		message := rawMessage.(*Message)
+		if message.IsBlocking {
+			// Blocking sends don't need this garbage collection mechanism
+			// because the BlockingSendUnreliableMessage method will clean up
+			// after itself.
+			return true
+		}
+		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(roundTripTimeSlop)) {
+			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
+			s.surbIDMap.Delete(surbID)
+		}
+		return true
+	}
+	s.surbIDMap.Range(surbIDMapRange)
 }
 
 func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
@@ -242,14 +278,14 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 	rawMessage, ok := s.surbIDMap.Load(*surbID)
 	if !ok {
-		s.log.Debug("Strange, received reply with unexpected SURBID")
+		s.log.Debug("BUG, received reply with unexpected SURBID")
 		return nil
 	}
 	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
-		s.log.Infof("Impossible SURB Reply decryption failure: %s", err)
+		s.log.Infof("BUG, SURB Reply decryption failure: %s", err)
 		return err
 	}
 	if len(plaintext) != coreConstants.ForwardPayloadLength {
@@ -260,27 +296,24 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.decrementDecoyLoopTally()
 		return nil
 	}
-	switch msg.SURBType {
-	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		if msg.IsBlocking {
-			replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
-			if !ok {
-				err := fmt.Errorf("BUG, failure to acquire replyWaitChan for message ID %x", msg.ID)
-				s.fatalErrCh <- err
-				return err
-			}
-			replyWaitChan := replyWaitChanRaw.(chan []byte)
-			replyWaitChan <- plaintext[2:]
-		} else {
-			s.eventCh.In() <- &MessageReplyEvent{
-				MessageID: msg.ID,
-				Payload:   plaintext[2:],
-				Err:       nil,
-			}
+
+	if msg.IsBlocking {
+		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
+		if !ok {
+			err := fmt.Errorf("BUG, failure to acquire replyWaitChan for message ID %x", msg.ID)
+			s.fatalErrCh <- err
+			return err
 		}
-	default:
-		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
+		replyWaitChan := replyWaitChanRaw.(chan []byte)
+		replyWaitChan <- plaintext[2:]
+	} else {
+		s.eventCh.In() <- &MessageReplyEvent{
+			MessageID: msg.ID,
+			Payload:   plaintext[2:],
+			Err:       nil,
+		}
 	}
+
 	return nil
 }
 

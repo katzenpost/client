@@ -80,7 +80,6 @@ func (s *Session) doSend(msg *Message) {
 		s.log.Debugf("doSend setting ReplyETA to %v", eta)
 		msg.Key = key
 		msg.SentAt = time.Now()
-		msg.Sent = true
 		msg.ReplyETA = eta
 		s.surbIDMap.Store(surbID, msg)
 	}
@@ -152,7 +151,6 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 		Provider:   provider,
 		Payload:    payload[:],
 		WithSURB:   true,
-		SURBType:   cConstants.SurbTypeKaetzchen,
 		IsBlocking: isBlocking,
 	}
 	return &msg, nil
