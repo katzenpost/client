@@ -264,12 +264,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		if msg.IsBlocking {
 			replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
-			replyWaitChan := replyWaitChanRaw.(chan []byte)
 			if !ok {
-				err := fmt.Errorf("Impossible failure to acquire replyWaitChan for message ID %x", msg.ID)
+				err := fmt.Errorf("BUG, failure to acquire replyWaitChan for message ID %x", msg.ID)
 				s.fatalErrCh <- err
 				return err
 			}
+			replyWaitChan := replyWaitChanRaw.(chan []byte)
 			replyWaitChan <- plaintext[2:]
 		} else {
 			s.eventCh.In() <- &MessageReplyEvent{

@@ -176,23 +176,26 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	if err != nil {
 		return nil, err
 	}
+
 	sentWaitChan := make(chan *Message)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
+	defer s.sentWaitChanMap.Delete(*msg.ID)
 
 	replyWaitChan := make(chan []byte)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
+	defer s.replyWaitChanMap.Delete(*msg.ID)
 
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
 	}
+
 	// wait until sent so that we know the ReplyETA for the waiting below
 	sentMessage := <-sentWaitChan
-	s.sentWaitChanMap.Delete(*msg.ID)
+
 	// wait for reply or round trip timeout
 	select {
 	case reply := <-replyWaitChan:
-		s.replyWaitChanMap.Delete(*msg.ID)
 		return reply, nil
 	case <-time.After(sentMessage.ReplyETA + roundTripTimeSlop):
 		return nil, ReplyTimeoutError
