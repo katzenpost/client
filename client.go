@@ -42,6 +42,49 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
+func RandomKeyAndProvider(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
+	// Pick a registration Provider.
+	logFilePath := ""
+	backendLog, err := log.New(logFilePath, "DEBUG", false)
+	if err != nil {
+		panic(err)
+	}
+	proxyCfg := cfg.UpstreamProxyConfig()
+	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
+	if err != nil {
+		panic(err)
+	}
+	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
+	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
+	defer cancel()
+	doc, _, err := pkiClient.Get(ctx, currentEpoch)
+	if err != nil {
+		panic(err)
+	}
+
+	registerProviders := []*pki.MixDescriptor{}
+	for _, provider := range doc.Providers {
+		if provider.RegistrationHTTPAddresses != nil {
+			registerProviders = append(registerProviders, provider)
+		}
+	}
+	if len(registerProviders) == 0 {
+		panic("zero registration Providers found in the consensus")
+	}
+	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
+	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	account := &config.Account{
+		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
+		Provider:       registrationProvider.Name,
+		ProviderKeyPin: registrationProvider.IdentityKey,
+	}
+	cfg.Account = account
+	return cfg, linkKey
+}
+
 func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
 	// Retrieve a copy of the PKI consensus document.
 	logFilePath := ""
