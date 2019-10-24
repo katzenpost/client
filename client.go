@@ -62,14 +62,14 @@ func RandomKeyAndProvider(cfg *config.Config) (*config.Config, *ecdh.PrivateKey)
 		panic(err)
 	}
 
-	registerProviders := []*pki.MixDescriptor{}
+	providers := []*pki.MixDescriptor{}
 	for _, provider := range doc.Providers {
-		registerProviders = append(registerProviders, provider)
+		providers = append(providers, provider)
 	}
-	if len(registerProviders) == 0 {
-		panic("zero registration Providers found in the consensus")
+	if len(providers) == 0 {
+		panic("zero Providers found in the consensus")
 	}
-	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
+	registrationProvider := providers[mrand.Intn(len(providers))]
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
 	if err != nil {
 		panic(err)
