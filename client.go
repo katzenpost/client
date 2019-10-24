@@ -64,9 +64,7 @@ func RandomKeyAndProvider(cfg *config.Config) (*config.Config, *ecdh.PrivateKey)
 
 	registerProviders := []*pki.MixDescriptor{}
 	for _, provider := range doc.Providers {
-		if provider.RegistrationHTTPAddresses != nil {
-			registerProviders = append(registerProviders, provider)
-		}
+		registerProviders = append(registerProviders, provider)
 	}
 	if len(registerProviders) == 0 {
 		panic("zero registration Providers found in the consensus")
