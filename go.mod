@@ -9,6 +9,7 @@ require (
 	github.com/katzenpost/kimchi v0.0.0-20190919180141-c3fbd2593e78
 	github.com/katzenpost/minclient v0.0.6-0.20190929083136-a3beb5961d6a
 	github.com/katzenpost/registration_client v0.0.1
+	github.com/katzenpost/server v0.0.8-0.20191106162003-e38032f88af5 // indirect
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
 	golang.org/x/text v0.3.2

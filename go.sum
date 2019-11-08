@@ -31,6 +31,7 @@ github.com/jackc/pgx v3.5.0+incompatible h1:BRJ4G3UPtvml5R1ey0biqqGuYUGayMYekm3w
 github.com/jackc/pgx v3.5.0+incompatible/go.mod h1:0ZGrqGqkRlliWnWB4zKnWtjbSWbGkVEFm4TeybAXq+I=
 github.com/katzenpost/authority v0.0.9-0.20190907184439-988189a151b2 h1:L3zmdBLOFj12qKwHGUYS0wXLJrV1kq09RYR37FeNqkg=
 github.com/katzenpost/authority v0.0.9-0.20190907184439-988189a151b2/go.mod h1:Y2nAUrhg1rsYmVmwYctPDd8BlncA5uCXaxDc1E5Dd6c=
+github.com/katzenpost/authority v0.0.9-0.20191106161303-96ab0219f7eb/go.mod h1:hEs95btyA1teM8VJFBeymeHaBXu1NTD3zJVf/ksAmEE=
 github.com/katzenpost/authority v0.0.9-0.20191107105026-7b51e28fe25d h1:oEvz4au8BeDtUDrGBZYEpAuM8RsAPYPdWTpgCcLDZKA=
 github.com/katzenpost/authority v0.0.9-0.20191107105026-7b51e28fe25d/go.mod h1:hEs95btyA1teM8VJFBeymeHaBXu1NTD3zJVf/ksAmEE=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
@@ -58,6 +59,8 @@ github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX
 github.com/katzenpost/server v0.0.8-0.20190724072104-f047a32043f3/go.mod h1:sOea2sG8ggASFYNTXhjEGmdanyXYsJz0wE2BTA/mCo0=
 github.com/katzenpost/server v0.0.8-0.20190910174632-99fb3d5cec86 h1:r/EAwAkWUuRFZLI3USCNagZ9Z9iUoLQds96OMvgHrXg=
 github.com/katzenpost/server v0.0.8-0.20190910174632-99fb3d5cec86/go.mod h1:CXvtbnouH1jIPgAcZcpqDimvz7NPn1N3XW6Chkax3dc=
+github.com/katzenpost/server v0.0.8-0.20191106162003-e38032f88af5 h1:yQfpFWk2xlP6aS56A0pJw7kfryWK+tN6BCGq/wu5uaQ=
+github.com/katzenpost/server v0.0.8-0.20191106162003-e38032f88af5/go.mod h1:U6BL82YYtdKFzSsD+mzbHJBNEjM7RcJIcdo5lPeT7MI=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
