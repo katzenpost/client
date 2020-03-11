@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -297,6 +298,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		return nil
 	}
 
+	// strip off two byte header which minclient adds in it's send.go
+	plaintext = plaintext[2:]
+	// strip off length prefixing we added in send.go
+	replyLen := binary.BigEndian.Uint32(plaintext[:4])
+	plaintext = plaintext[4 : replyLen+4]
+
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
@@ -305,11 +312,11 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			return err
 		}
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
-		replyWaitChan <- plaintext[2:]
+		replyWaitChan <- plaintext
 	} else {
 		s.eventCh.In() <- &MessageReplyEvent{
 			MessageID: msg.ID,
-			Payload:   plaintext[2:],
+			Payload:   plaintext,
 			Err:       nil,
 		}
 	}
