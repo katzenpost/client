@@ -121,11 +121,11 @@ func (s *Session) worker() {
 				}
 				isConnected = newConnectedStatus
 			case opNewDocument:
-				s.setPollingInterval(op.doc)
 				err := s.isDocValid(op.doc)
 				if err != nil {
 					s.fatalErrCh <- err
 				}
+				s.setPollingInterval(op.doc)
 				doc = op.doc
 				lambdaP = doc.LambdaP
 				lambdaL = doc.LambdaL
