@@ -40,6 +40,9 @@ func (s *Session) setPollingInterval(doc *pki.Document) {
 	// Clients have 2 poisson processes, λP and λL.
 	// They result in SURB replies.
 	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
+	if interval == 0 {
+		panic("WTF")
+	}
 	s.minclient.SetPollInterval(interval)
 }
 
