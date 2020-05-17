@@ -313,6 +313,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
+	s.log.Debugf("onDocument(): %v", doc)
 	s.hasPKIDoc = true
 	s.opCh <- opNewDocument{
 		doc: doc,

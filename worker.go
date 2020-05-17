@@ -41,7 +41,9 @@ func (s *Session) setPollingInterval(doc *pki.Document) {
 	// They result in SURB replies.
 	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
 	if interval == 0 {
-		panic("WTF")
+		if doc.LambdaP == 0 || doc.LambdaL == 0 {
+			panic("WTF")
+		}
 	}
 	s.minclient.SetPollInterval(interval)
 }
