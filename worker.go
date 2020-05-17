@@ -196,6 +196,9 @@ func (s *Session) sendFromQueueOrDecoy() {
 }
 
 func (s *Session) isDocValid(doc *pki.Document) error {
+	if len(doc.Providers) == 0 {
+		panic("WTF")
+	}
 	for _, provider := range doc.Providers {
 		_, ok := provider.Kaetzchen[constants.LoopService]
 		if !ok {
