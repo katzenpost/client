@@ -39,7 +39,7 @@ type opNewDocument struct {
 func (s *Session) setPollingInterval(doc *pki.Document) {
 	// Clients have 2 poisson processes, λP and λL.
 	// They result in SURB replies.
-	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
+	interval := time.Duration(float64(time.Second)/((doc.LambdaP + doc.LambdaL)/2))
 	s.minclient.SetPollInterval(interval)
 }
 
