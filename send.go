@@ -179,7 +179,7 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	case <-time.After(30*time.Second + sentMessage.ReplyETA*2 + cConstants.RoundTripTimeSlop):
+	case <-time.After(2*time.Minute + sentMessage.ReplyETA*2 + cConstants.RoundTripTimeSlop):
 		return nil, ErrReplyTimeout
 	}
 	// unreachable
