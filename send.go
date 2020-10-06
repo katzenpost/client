@@ -66,28 +66,40 @@ func (s *Session) doSend(msg *Message) {
 	} else {
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
 	}
-	if msg.WithSURB {
-		s.log.Debugf("doSend setting ReplyETA to %v", eta)
-		msg.Key = key
+
+	// message was sent
+	if err == nil {
 		msg.SentAt = time.Now()
-		msg.ReplyETA = eta
-		s.surbIDMap.Store(surbID, msg)
 	}
-	if msg.IsBlocking {
-		sentWaitChanRaw, ok := s.sentWaitChanMap.Load(*msg.ID)
-		if !ok {
-			s.fatalErrCh <- fmt.Errorf("impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
+	// expect a reply
+	if msg.WithSURB {
+		if err == nil {
+			s.log.Debugf("doSend setting ReplyETA to %v", eta)
+			msg.ReplyETA = eta
+			msg.Key = key
+			s.surbIDMap.Store(surbID, msg)
+		}
+		// write to waiting channel or close channel if message failed to send
+		if msg.IsBlocking {
+			sentWaitChanRaw, ok := s.sentWaitChanMap.Load(*msg.ID)
+			if !ok {
+				s.fatalErrCh <- fmt.Errorf("impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
+				return
+			}
+			sentWaitChan := sentWaitChanRaw.(chan *Message)
+			if err == nil {
+				sentWaitChan <- msg
+			} else {
+				close(sentWaitChan)
+			}
 			return
 		}
-		sentWaitChan := sentWaitChanRaw.(chan *Message)
-		sentWaitChan <- msg
-	} else {
-		s.eventCh.In() <- &MessageSentEvent{
-			MessageID: msg.ID,
-			Err:       err,
-			SentAt:    msg.SentAt,
-			ReplyETA:  msg.ReplyETA,
-		}
+	}
+	s.eventCh.In() <- &MessageSentEvent{
+		MessageID: msg.ID,
+		Err:       err,
+		SentAt:    msg.SentAt,
+		ReplyETA:  msg.ReplyETA,
 	}
 }
 
