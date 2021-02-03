@@ -109,7 +109,8 @@ func (s *Session) sendDropDecoy() {
 	s.log.Info("sending drop decoy")
 	serviceDesc, err := s.GetService(cConstants.LoopService)
 	if err != nil {
-		s.fatalErrCh <- errors.New("failure to get loop service")
+		//s.fatalErrCh <- errors.New("failure to get loop service")
+		s.fatalErrCh <- err
 		return
 	}
 	payload := [constants.UserForwardPayloadLength]byte{}
