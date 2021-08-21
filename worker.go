@@ -75,12 +75,12 @@ func (s *Session) worker() {
 		return
 	}
 
-	// get the initial loop services if decoy traffic is enabled
-	var loopServices []utils.ServiceDescriptor
+	// get the initial echo services if decoy traffic is enabled
+	var echoServices []utils.ServiceDescriptor
 	if !s.cfg.Debug.DisableDecoyTraffic {
-		loopServices = utils.FindServices(cConstants.LoopService, doc)
-		if len(loopServices) == 0 {
-			s.fatalErrCh <- errors.New("failure to get loop service")
+		echoServices = utils.FindServices(cConstants.EchoService, doc)
+		if len(echoServices) == 0 {
+			s.fatalErrCh <- errors.New("failure to get echo service")
 			return
 		}
 	}
@@ -123,7 +123,7 @@ func (s *Session) worker() {
 		var lambdaPFired bool
 		var lambdaLFired bool
 		var lambdaDFired bool
-		var loopSvc *utils.ServiceDescriptor
+		var echoSvc *utils.ServiceDescriptor
 		var qo workerOp
 
 		select {
@@ -159,10 +159,10 @@ func (s *Session) worker() {
 				lambdaL = doc.LambdaL
 				lambdaD = doc.LambdaD
 
-				// update the loop service descriptors
-				loopServices = utils.FindServices(cConstants.LoopService, doc)
-				if len(loopServices) == 0 {
-					s.fatalErrCh <- errors.New("failure to get loop service")
+				// update the echo service descriptors
+				echoServices = utils.FindServices(cConstants.EchoService, doc)
+				if len(echoServices) == 0 {
+					s.fatalErrCh <- errors.New("failure to get echo service")
 					return
 				}
 
@@ -172,16 +172,16 @@ func (s *Session) worker() {
 			} // end of switch
 		} else {
 			if isConnected {
-				// select a loop service endpoint
+				// select a echo service endpoint
 				if !s.cfg.Debug.DisableDecoyTraffic {
-					loopSvc = &loopServices[mrand.Intn(len(loopServices))]
+					echoSvc = &echoServices[mrand.Intn(len(echoServices))]
 				}
 				if lambdaPFired {
-					s.sendFromQueueOrDecoy(loopSvc)
+					s.sendFromQueueOrDecoy(echoSvc)
 				} else if lambdaLFired && !s.cfg.Debug.DisableDecoyTraffic {
-					s.sendLoopDecoy(loopSvc)
+					s.sendLoopDecoy(echoSvc)
 				} else if lambdaDFired && !s.cfg.Debug.DisableDecoyTraffic {
-					s.sendDropDecoy(loopSvc)
+					s.sendDropDecoy(echoSvc)
 				}
 			}
 		}
@@ -229,22 +229,22 @@ func (s *Session) worker() {
 	// NOTREACHED
 }
 
-func (s *Session) sendFromQueueOrDecoy(loopSvc *utils.ServiceDescriptor) {
+func (s *Session) sendFromQueueOrDecoy(svc *utils.ServiceDescriptor) {
 	// Attempt to send user data first, if any exists.
 	// Otherwise send a drop decoy message.
 	_, err := s.egressQueue.Peek()
 	if err == nil {
 		s.sendNext()
 	} else if !s.cfg.Debug.DisableDecoyTraffic {
-		s.sendDropDecoy(loopSvc)
+		s.sendDropDecoy(svc)
 	}
 }
 
 func (s *Session) isDocValid(doc *pki.Document) error {
 	for _, provider := range doc.Providers {
-		_, ok := provider.Kaetzchen[constants.LoopService]
+		_, ok := provider.Kaetzchen[constants.EchoService]
 		if !ok {
-			return errors.New("found a Provider which does not have the loop service")
+			return errors.New("found a Provider which does not have the echo service")
 		}
 	}
 	return nil

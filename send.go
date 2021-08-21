@@ -150,7 +150,7 @@ func (s *Session) doSend(msg *Message) {
 	}
 }
 
-func (s *Session) sendDropDecoy(loopSvc *utils.ServiceDescriptor) {
+func (s *Session) sendDropDecoy(svc *utils.ServiceDescriptor) {
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])
@@ -160,8 +160,8 @@ func (s *Session) sendDropDecoy(loopSvc *utils.ServiceDescriptor) {
 	}
 	msg := &Message{
 		ID:        &id,
-		Recipient: loopSvc.Name,
-		Provider:  loopSvc.Provider,
+		Recipient: svc.Name,
+		Provider:  svc.Provider,
 		Payload:   payload[:],
 		WithSURB:  false,
 		IsDecoy:   true,
@@ -169,7 +169,7 @@ func (s *Session) sendDropDecoy(loopSvc *utils.ServiceDescriptor) {
 	s.doSend(msg)
 }
 
-func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
+func (s *Session) sendLoopDecoy(svc *utils.ServiceDescriptor) {
 	s.log.Info("sending loop decoy")
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
@@ -180,8 +180,8 @@ func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 	}
 	msg := &Message{
 		ID:        &id,
-		Recipient: loopSvc.Name,
-		Provider:  loopSvc.Provider,
+		Recipient: svc.Name,
+		Provider:  svc.Provider,
 		Payload:   payload[:],
 		WithSURB:  true,
 		IsDecoy:   true,
